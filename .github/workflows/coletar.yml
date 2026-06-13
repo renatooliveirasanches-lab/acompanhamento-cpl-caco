@@ -1,0 +1,47 @@
+name: Coletar views dos CPLs
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # de hora em hora (no minuto 0, horario UTC)
+  workflow_dispatch:        # permite rodar na mao pelo botao do GitHub
+
+permissions:
+  contents: write           # deixa o robo salvar o historico de volta no repositorio
+
+concurrency:
+  group: coletar-cpl
+  cancel-in-progress: false
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar o Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Rodar o robo
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python robo.py
+
+      - name: Salvar o historico
+        run: |
+          git config user.name "robo-cpl"
+          git config user.email "robo-cpl@users.noreply.github.com"
+          git add dados/snapshots.csv
+          if git diff --staged --quiet; then
+            echo "Nada novo pra salvar."
+          else
+            git commit -m "Coleta automatica $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
