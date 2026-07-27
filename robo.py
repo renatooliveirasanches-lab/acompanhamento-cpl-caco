@@ -12,13 +12,27 @@ O Renato so mexe na planilha (aba CONFIG). O resto e automatico.
 
 import csv
 import io
+import json
 import os
 import re
 import sys
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-import requests
+
+def _get(url, params=None, timeout=30):
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        return r.read().decode("utf-8")
+
+
+def _post(url, dados, timeout=30):
+    corpo = urllib.parse.urlencode(dados).encode()
+    with urllib.request.urlopen(url, corpo, timeout=timeout) as r:
+        return r.read().decode("utf-8")
 
 # ===================== CONFIGURACAO =====================
 
@@ -34,6 +48,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 TOLERANCIA = 0.02  # 2% pra cima/baixo conta como "igual"
 FUSO = ZoneInfo("America/Sao_Paulo")
 ARQUIVO_SNAPSHOTS = os.path.join("dados", "snapshots.csv")
+ARQUIVO_REGUA = os.path.join("dados", "regua.csv")
 
 CABECALHO_SNAPSHOTS = [
     "TIMESTAMP", "LANCAMENTO", "TAG", "CPL", "VIDEO_ID",
@@ -49,9 +64,7 @@ def ler_config():
         f"https://docs.google.com/spreadsheets/d/{SHEET_ID}"
         f"/gviz/tq?tqx=out:csv&sheet={ABA_CONFIG}"
     )
-    resp = requests.get(url, timeout=30)
-    resp.raise_for_status()
-    linhas = list(csv.DictReader(io.StringIO(resp.text)))
+    linhas = list(csv.DictReader(io.StringIO(_get(url))))
 
     ativos = []
     for r in linhas:
@@ -103,8 +116,7 @@ def buscar_estatisticas(video_id):
     """Le as estatisticas publicas do video pela YouTube Data API (chave)."""
     url = "https://www.googleapis.com/youtube/v3/videos"
     params = {"part": "statistics,snippet", "id": video_id, "key": YOUTUBE_API_KEY}
-    resp = requests.get(url, params=params, timeout=30)
-    data = resp.json()
+    data = json.loads(_get(url, params))
     if data.get("error"):
         print(f"Erro YouTube API ({video_id}): {data['error']}", file=sys.stderr)
         return None
@@ -141,33 +153,59 @@ def gravar_snapshots(novas_linhas):
         w.writerows(novas_linhas)
 
 
-def comparar_historico(historico, cpl, horas, lancamento_atual, pct_atual):
-    """Compara o % de views com OUTROS lancamentos no mesmo CPL e mesma hora."""
-    if pct_atual is None:
+def ler_regua():
+    """
+    A regua: como cada CPL de cada lancamento anterior se saiu no DIA DA
+    ESTREIA (% de views sobre os leads daquele lancamento). Gerada pelo
+    levantar_historico.py a partir do YouTube Analytics.
+    """
+    if not os.path.exists(ARQUIVO_REGUA):
+        return {}
+    por_cpl = {}
+    with open(ARQUIVO_REGUA, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            try:
+                por_cpl.setdefault(str(r["CPL"]), []).append({
+                    "lancamento": r["LANCAMENTO"], "personagem": r["PERSONAGEM"],
+                    "leads": int(r["LEADS"]), "pct": float(r["PCT"]) / 100,
+                })
+            except (ValueError, KeyError):
+                continue
+    return por_cpl
+
+
+def comparar_com_regua(regua, cpl, pct_atual, leads_atual, horas):
+    """
+    Compara o CPL de agora com o MESMO CPL dos outros lancamentos
+    (CPL1 x CPL1, CPL2 x CPL2 — nunca CPL1 x CPL2).
+
+    ponytail: a regua e o fechamento do dia da estreia (~24h). Enquanto o
+    video tiver menos que isso, a comparacao e PARCIAL e vai naturalmente
+    aparecer abaixo — por isso marcamos a fase em vez de gritar vermelho.
+    """
+    linhas = regua.get(str(cpl), [])
+    if not linhas or pct_atual is None:
         return None
-    pares = []
-    for h in historico:
-        try:
-            if (str(h["CPL"]) == str(cpl)
-                    and int(float(h["HORA_DESDE_PUBLICACAO"])) == int(horas)
-                    and h["LANCAMENTO"] != lancamento_atual
-                    and h["PCT_VIEWS"] not in ("", None)
-                    and float(h["PCT_VIEWS"]) > 0):
-                pares.append((h["LANCAMENTO"], float(h["PCT_VIEWS"])))
-        except (ValueError, KeyError):
-            continue
-    if not pares:
-        return None
-    media = sum(p for _, p in pares) / len(pares)
-    melhor_lanc, melhor = max(pares, key=lambda x: x[1])
-    if pct_atual > media * (1 + TOLERANCIA):
+
+    pcts = [l["pct"] for l in linhas]
+    media = sum(pcts) / len(pcts)
+    melhor = max(linhas, key=lambda l: l["pct"])
+    pior = min(linhas, key=lambda l: l["pct"])
+    # o comparavel mais justo: lancamento com base de leads mais parecida
+    parecido = min(linhas, key=lambda l: abs(l["leads"] - leads_atual)) if leads_atual else None
+
+    fechou = horas >= 24
+    if not fechou:
+        status = "PARCIAL"
+    elif pct_atual > media * (1 + TOLERANCIA):
         status = "ACIMA"
     elif pct_atual < media * (1 - TOLERANCIA):
         status = "ABAIXO"
     else:
         status = "IGUAL"
-    return {"status": status, "media": media, "melhor": melhor,
-            "melhor_lanc": melhor_lanc, "qtd": len(pares)}
+
+    return {"status": status, "media": media, "melhor": melhor, "pior": pior,
+            "parecido": parecido, "qtd": len(linhas), "fechou": fechou}
 
 
 # ===================== TELEGRAM =====================
@@ -177,9 +215,7 @@ def enviar_telegram(texto):
         print("Telegram nao configurado.", file=sys.stderr)
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, data={
-        "chat_id": TELEGRAM_CHAT_ID, "text": texto, "parse_mode": "Markdown",
-    }, timeout=30)
+    _post(url, {"chat_id": TELEGRAM_CHAT_ID, "text": texto, "parse_mode": "Markdown"})
 
 
 def nfmt(n):
@@ -196,17 +232,29 @@ def montar_mensagem(itens, agora):
     for it in itens:
         pct_txt = "—" if it["pct"] is None else pctfmt(it["pct"])
         msg += (f"\n*{it['lancamento']}* · CPL{it['cpl']} ({it['personagem']})"
-                f"\nhora {it['horas']}: {nfmt(it['views'])} views ({pct_txt} dos leads)")
+                f"\nhora {it['horas']}: {nfmt(it['views'])} views · *{pct_txt}* dos leads\n")
+
         comp = it["comp"]
-        if comp:
+        if not comp:
+            msg += "⚪️ sem régua pra esse CPL ainda\n"
+            continue
+
+        if comp["fechou"]:
             seta = {"ACIMA": "🟢", "ABAIXO": "🔴", "IGUAL": "🟡"}[comp["status"]]
             dif = it["pct"] - comp["media"]
             dif_txt = ("+" if dif >= 0 else "") + pctfmt(dif)
-            msg += (f"\n{seta} {comp['status']} vs média ({dif_txt})"
-                    f" · melhor: {comp['melhor_lanc']} ({pctfmt(comp['melhor'])})")
+            msg += f"{seta} *{comp['status']}* da média ({dif_txt})\n"
         else:
-            msg += "\n⚪️ sem base de comparação ainda"
-        msg += "\n"
+            faltam = 24 - it["horas"]
+            msg += f"🕐 parcial — faltam {faltam}h pra fechar o dia 1\n"
+
+        msg += f"\n_Régua do CPL{it['cpl']} (dia da estreia, {comp['qtd']} oficinas):_\n"
+        p = comp["parecido"]
+        if p:
+            msg += f"  base parecida · {p['personagem']}: {pctfmt(p['pct'])}\n"
+        msg += (f"  média: {pctfmt(comp['media'])}\n"
+                f"  melhor · {comp['melhor']['personagem']}: {pctfmt(comp['melhor']['pct'])}\n"
+                f"  pior · {comp['pior']['personagem']}: {pctfmt(comp['pior']['pct'])}\n")
     return msg
 
 
@@ -222,7 +270,7 @@ def main():
         print("Nenhum CPL ativo na planilha. Nada a fazer.")
         return
 
-    historico = ler_historico()
+    regua = ler_regua()
     agora = datetime.now(timezone.utc)
     agora_br = agora.astimezone(FUSO)
 
@@ -241,7 +289,7 @@ def main():
             cfg["cpl"], cfg["video_id"], horas, stats["views"], stats["likes"],
             stats["comments"], "" if pct is None else f"{pct:.6f}",
         ])
-        comp = comparar_historico(historico, cfg["cpl"], horas, cfg["lancamento"], pct)
+        comp = comparar_com_regua(regua, cfg["cpl"], pct, cfg["leads"], horas)
         itens_resumo.append({
             "lancamento": cfg["lancamento"], "personagem": cfg["personagem"],
             "cpl": cfg["cpl"], "horas": horas, "views": stats["views"],

@@ -24,8 +24,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Instalar dependencias
-        run: pip install -r requirements.txt
 
       - name: Rodar o robo
         env:
