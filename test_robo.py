@@ -31,9 +31,40 @@ def test_parcial_antes_de_24h():
 
 
 def test_veredito_depois_de_24h():
-    assert robo.comparar_com_regua(REGUA, "1", 0.90, 62866, 24)["status"] == "ACIMA"
-    assert robo.comparar_com_regua(REGUA, "1", 0.40, 62866, 24)["status"] == "ABAIXO"
-    assert robo.comparar_com_regua(REGUA, "1", MEDIA_CPL1, 62866, 24)["status"] == "IGUAL"
+    """O veredito usa o % CONGELADO nas 24h, nao o acumulado de agora."""
+    assert robo.comparar_com_regua(REGUA, "1", 0.90, 62866, 24, 0.90)["status"] == "ACIMA"
+    assert robo.comparar_com_regua(REGUA, "1", 0.40, 62866, 24, 0.40)["status"] == "ABAIXO"
+    assert robo.comparar_com_regua(REGUA, "1", 0.70, 62866, 24, MEDIA_CPL1)["status"] == "IGUAL"
+
+
+def test_nao_compara_77h_contra_regua_de_24h():
+    """
+    O bug real de 30/07: o video tinha 114,3% acumulado em 77h e o robo
+    dizia ACIMA da media de 70,1% — mas no fim do dia 1 tinha 56,1%,
+    que e ABAIXO. O veredito tem que seguir o numero das 24h.
+    """
+    c = robo.comparar_com_regua(REGUA, "1", 1.143, 62866, 77, pct_fechamento=0.561)
+    assert c["status"] == "ABAIXO", "veredito deve usar as 24h, nao as 77h"
+    assert c["pct_veredito"] == 0.561
+
+
+def test_sem_fechamento_nao_da_veredito():
+    """Passou de 24h mas nao achou o snapshot do fechamento: segura o veredito."""
+    c = robo.comparar_com_regua(REGUA, "1", 1.143, 62866, 77, pct_fechamento=None)
+    assert c["status"] == "PARCIAL" and not c["fechou"]
+
+
+def test_pct_no_fechamento_pega_o_snapshot_certo():
+    hist = [
+        {"LANCAMENTO": "LC0426", "CPL": "1", "HORA_DESDE_PUBLICACAO": "10", "PCT_VIEWS": "0.294"},
+        {"LANCAMENTO": "LC0426", "CPL": "1", "HORA_DESDE_PUBLICACAO": "24", "PCT_VIEWS": "0.561"},
+        {"LANCAMENTO": "LC0426", "CPL": "1", "HORA_DESDE_PUBLICACAO": "77", "PCT_VIEWS": "1.143"},
+        {"LANCAMENTO": "LC0426", "CPL": "2", "HORA_DESDE_PUBLICACAO": "24", "PCT_VIEWS": "0.30"},
+        {"LANCAMENTO": "OUTRO", "CPL": "1", "HORA_DESDE_PUBLICACAO": "24", "PCT_VIEWS": "0.99"},
+    ]
+    assert robo.pct_no_fechamento(hist, "LC0426", "1") == (0.561, 24)
+    assert robo.pct_no_fechamento(hist, "LC0426", "2") == (0.30, 24)
+    assert robo.pct_no_fechamento(hist, "INEXISTENTE", "1") is None
 
 
 def test_escolhe_a_base_mais_parecida():

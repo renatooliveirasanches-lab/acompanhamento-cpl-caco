@@ -174,18 +174,37 @@ def ler_regua():
     return por_cpl
 
 
-def comparar_com_regua(regua, cpl, pct_atual, leads_atual, horas):
+def pct_no_fechamento(historico, lancamento, cpl, limite=24):
+    """
+    O % que o video tinha ao completar ~24h — o unico numero comparavel com
+    a regua. Sem isso o robo compararia 77h contra 24h e diria "acima" de
+    um jeito que nao quer dizer nada.
+    """
+    candidatos = [
+        h for h in historico
+        if h.get("LANCAMENTO") == lancamento and str(h.get("CPL")) == str(cpl)
+        and h.get("PCT_VIEWS") not in ("", None)
+        and int(float(h.get("HORA_DESDE_PUBLICACAO", 0))) <= limite
+    ]
+    if not candidatos:
+        return None
+    ultimo = max(candidatos, key=lambda h: int(float(h["HORA_DESDE_PUBLICACAO"])))
+    return float(ultimo["PCT_VIEWS"]), int(float(ultimo["HORA_DESDE_PUBLICACAO"]))
+
+
+def comparar_com_regua(regua, cpl, pct_atual, leads_atual, horas, pct_fechamento=None):
     """
     Compara o CPL de agora com o MESMO CPL dos outros lancamentos
     (CPL1 x CPL1, CPL2 x CPL2 — nunca CPL1 x CPL2).
 
-    ponytail: a regua e o fechamento do dia da estreia (~24h). Enquanto o
-    video tiver menos que isso, a comparacao e PARCIAL e vai naturalmente
-    aparecer abaixo — por isso marcamos a fase em vez de gritar vermelho.
+    A regua e o fechamento do dia da estreia (~24h). Antes disso a
+    comparacao e PARCIAL; depois, o veredito usa o % CONGELADO nas 24h
+    (pct_fechamento), nunca o acumulado de agora.
     """
     linhas = regua.get(str(cpl), [])
     if not linhas or pct_atual is None:
         return None
+    pct_veredito = pct_fechamento if pct_fechamento is not None else pct_atual
 
     pcts = [l["pct"] for l in linhas]
     media = sum(pcts) / len(pcts)
@@ -194,18 +213,19 @@ def comparar_com_regua(regua, cpl, pct_atual, leads_atual, horas):
     # o comparavel mais justo: lancamento com base de leads mais parecida
     parecido = min(linhas, key=lambda l: abs(l["leads"] - leads_atual)) if leads_atual else None
 
-    fechou = horas >= 24
+    fechou = horas >= 24 and pct_fechamento is not None
     if not fechou:
         status = "PARCIAL"
-    elif pct_atual > media * (1 + TOLERANCIA):
+    elif pct_veredito > media * (1 + TOLERANCIA):
         status = "ACIMA"
-    elif pct_atual < media * (1 - TOLERANCIA):
+    elif pct_veredito < media * (1 - TOLERANCIA):
         status = "ABAIXO"
     else:
         status = "IGUAL"
 
     return {"status": status, "media": media, "melhor": melhor, "pior": pior,
-            "parecido": parecido, "qtd": len(linhas), "fechou": fechou}
+            "parecido": parecido, "qtd": len(linhas), "fechou": fechou,
+            "pct_veredito": pct_veredito}
 
 
 # ===================== TELEGRAM =====================
@@ -241,9 +261,10 @@ def montar_mensagem(itens, agora):
 
         if comp["fechou"]:
             seta = {"ACIMA": "🟢", "ABAIXO": "🔴", "IGUAL": "🟡"}[comp["status"]]
-            dif = it["pct"] - comp["media"]
+            dif = comp["pct_veredito"] - comp["media"]
             dif_txt = ("+" if dif >= 0 else "") + pctfmt(dif)
-            msg += f"{seta} *{comp['status']}* da média ({dif_txt})\n"
+            msg += (f"no fim do dia 1: *{pctfmt(comp['pct_veredito'])}*\n"
+                    f"{seta} *{comp['status']}* da média ({dif_txt})\n")
         else:
             faltam = 24 - it["horas"]
             msg += f"🕐 parcial — faltam {faltam}h pra fechar o dia 1\n"
@@ -271,6 +292,7 @@ def main():
         return
 
     regua = ler_regua()
+    historico = ler_historico()
     agora = datetime.now(timezone.utc)
     agora_br = agora.astimezone(FUSO)
 
@@ -289,7 +311,9 @@ def main():
             cfg["cpl"], cfg["video_id"], horas, stats["views"], stats["likes"],
             stats["comments"], "" if pct is None else f"{pct:.6f}",
         ])
-        comp = comparar_com_regua(regua, cfg["cpl"], pct, cfg["leads"], horas)
+        fech = pct_no_fechamento(historico, cfg["lancamento"], cfg["cpl"])
+        comp = comparar_com_regua(regua, cfg["cpl"], pct, cfg["leads"], horas,
+                                  pct_fechamento=fech[0] if fech else None)
         itens_resumo.append({
             "lancamento": cfg["lancamento"], "personagem": cfg["personagem"],
             "cpl": cfg["cpl"], "horas": horas, "views": stats["views"],
