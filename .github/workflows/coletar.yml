@@ -2,9 +2,9 @@ name: Coletar views dos CPLs
 
 on:
   schedule:
-    # 2 tentativas por hora, fora do minuto 0 (o GitHub atrasa/descarta muito no minuto 0).
-    # O robo ignora a 2a se a hora ja foi coletada. 2x/h = ~1.440 min/mes (limite gratis: 2.000).
-    - cron: '17,47 * * * *'
+    # 4 tentativas por hora, fora do minuto 0 (o GitHub atrasa/descarta muito no minuto 0).
+    # O robo ignora as seguintes se a hora ja foi coletada. Repositorio publico = minutos ilimitados.
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:        # permite rodar na mao pelo botao do GitHub
 
 permissions:
