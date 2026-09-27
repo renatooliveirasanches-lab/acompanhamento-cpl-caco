@@ -310,6 +310,8 @@ def main():
     for cfg in ativos:
         stats = buscar_estatisticas(cfg["video_id"])
         if not stats or not stats["publishedAt"]:
+            print(f"Video {cfg['video_id']} ({cfg['lancamento']} CPL{cfg['cpl']}) nao encontrado: "
+                  "privado ou apagado? Desmarque ATIVO na planilha.", file=sys.stderr)
             continue
         horas = int((agora - stats["publishedAt"]).total_seconds() // 3600)
         if ja_coletado(historico, cfg["lancamento"], cfg["cpl"], horas):
