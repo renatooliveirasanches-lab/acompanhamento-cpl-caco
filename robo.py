@@ -174,6 +174,14 @@ def ler_regua():
     return por_cpl
 
 
+def ja_coletado(historico, lancamento, cpl, horas):
+    return any(
+        h.get("LANCAMENTO") == lancamento and str(h.get("CPL")) == str(cpl)
+        and int(float(h.get("HORA_DESDE_PUBLICACAO") or -1)) == horas
+        for h in historico
+    )
+
+
 def pct_no_fechamento(historico, lancamento, cpl, limite=24):
     """
     O % que o video tinha ao completar ~24h — o unico numero comparavel com
@@ -304,13 +312,18 @@ def main():
         if not stats or not stats["publishedAt"]:
             continue
         horas = int((agora - stats["publishedAt"]).total_seconds() // 3600)
+        if ja_coletado(historico, cfg["lancamento"], cfg["cpl"], horas):
+            continue  # o workflow roda 2x/hora; a 2a vez nao repete coleta nem Telegram
         pct = (stats["views"] / cfg["leads"]) if cfg["leads"] > 0 else None
 
-        novas_linhas.append([
+        linha = [
             agora_br.strftime("%Y-%m-%d %H:%M:%S"), cfg["lancamento"], cfg["tag"],
             cfg["cpl"], cfg["video_id"], horas, stats["views"], stats["likes"],
             stats["comments"], "" if pct is None else f"{pct:.6f}",
-        ])
+        ]
+        novas_linhas.append(linha)
+        # a coleta de agora conta pro fechamento (ex.: esta e a da hora 24)
+        historico.append(dict(zip(CABECALHO_SNAPSHOTS, map(str, linha))))
         fech = pct_no_fechamento(historico, cfg["lancamento"], cfg["cpl"])
         comp = comparar_com_regua(regua, cfg["cpl"], pct, cfg["leads"], horas,
                                   pct_fechamento=fech[0] if fech else None)

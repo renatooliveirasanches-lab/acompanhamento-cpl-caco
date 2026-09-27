@@ -37,6 +37,14 @@ def test_veredito_depois_de_24h():
     assert robo.comparar_com_regua(REGUA, "1", 0.70, 62866, 24, MEDIA_CPL1)["status"] == "IGUAL"
 
 
+def test_nao_repete_a_mesma_hora():
+    """O workflow roda 2x por hora: a 2a execucao nao pode duplicar a coleta."""
+    h = [{"LANCAMENTO": "LC0526", "CPL": "1", "HORA_DESDE_PUBLICACAO": "5"}]
+    assert robo.ja_coletado(h, "LC0526", "1", 5)
+    assert not robo.ja_coletado(h, "LC0526", "1", 6)
+    assert not robo.ja_coletado(h, "LC0526", "2", 5)
+
+
 def test_nao_compara_77h_contra_regua_de_24h():
     """
     O bug real de 30/07: o video tinha 114,3% acumulado em 77h e o robo
