@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Views dos CPLs</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f6f5f2; --surface:#fcfcfb; --borda:#e4e2dc; --grade:#ecebe6;
+  --texto:#0b0b0b; --texto-2:#52514e; --texto-3:#7a7974;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+  --bom:#1a7f37; --ruim:#c62f2f; --neutro:#9a6700;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#121211; --surface:#1a1a19; --borda:#2e2e2b; --grade:#262624;
+    --texto:#fff; --texto-2:#c3c2b7; --texto-3:#8f8e86;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+    --bom:#4ac26b; --ruim:#ff7b72; --neutro:#d4a72c;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#121211; --surface:#1a1a19; --borda:#2e2e2b; --grade:#262624;
+  --texto:#fff; --texto-2:#c3c2b7; --texto-3:#8f8e86;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+  --bom:#4ac26b; --ruim:#ff7b72; --neutro:#d4a72c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--texto);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1080px;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:end;justify-content:space-between;margin-bottom:20px}
+h1{font-size:24px;margin:0;letter-spacing:-.01em}
+h2{font-size:16px;margin:0 0 4px}
+.sub{color:var(--texto-2);font-size:13px;margin:2px 0 0}
+select,button{font:inherit;color:var(--texto);background:var(--surface);border:1px solid var(--borda);border-radius:8px;padding:6px 10px}
+button{cursor:pointer}
+button[aria-pressed="true"]{background:var(--texto);color:var(--surface);border-color:var(--texto)}
+.cartao{background:var(--surface);border:1px solid var(--borda);border-radius:12px;padding:16px;margin-bottom:16px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--surface);border:1px solid var(--borda);border-radius:12px;padding:14px 16px}
+.kpi .rot{display:flex;align-items:center;gap:8px;color:var(--texto-2);font-size:13px}
+.kpi .marca{width:10px;height:10px;border-radius:3px;flex:none}
+.kpi .grande{font-size:30px;font-weight:650;letter-spacing:-.02em;margin:4px 0 0;font-variant-numeric:tabular-nums}
+.kpi .det{color:var(--texto-2);font-size:13px;font-variant-numeric:tabular-nums}
+.status{display:inline-flex;gap:6px;align-items:center;font-weight:600;font-size:13px;margin-top:8px}
+.status.bom{color:var(--bom)} .status.ruim{color:var(--ruim)} .status.igual{color:var(--neutro)} .status.parcial{color:var(--texto-2)}
+.topo-graf{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:start;margin-bottom:8px}
+.legenda{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--texto-2)}
+.legenda span{display:inline-flex;align-items:center;gap:6px}
+.legenda i{width:14px;height:3px;border-radius:2px;display:inline-block}
+.abas{display:flex;gap:6px;flex-wrap:wrap}
+.graf{position:relative;width:100%}
+.graf svg{display:block;width:100%;height:auto;overflow:visible}
+.graf text{font-size:12px;fill:var(--texto-2);font-variant-numeric:tabular-nums}
+.dica{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--borda);border-radius:8px;padding:8px 10px;font-size:13px;box-shadow:0 4px 16px #0002;display:none;white-space:nowrap;z-index:2}
+.dica b{font-variant-numeric:tabular-nums}
+details summary{cursor:pointer;color:var(--texto-2);font-size:14px}
+.tabela{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums;margin-top:10px}
+th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--grade);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--texto-2);font-weight:600}
+.nota{color:var(--texto-3);font-size:12px;line-height:1.5}
+.vazio{color:var(--texto-2);padding:24px 0;text-align:center}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Views dos CPLs</h1>
+      <p class="sub" id="atualizado">carregando…</p>
+    </div>
+    <label class="sub">Lançamento&nbsp; <select id="lanc"></select></label>
+  </header>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section class="cartao">
+    <div class="topo-graf">
+      <div>
+        <h2>Views sobre os leads, hora a hora</h2>
+        <p class="sub">% dos leads que já assistiram, contando da publicação de cada CPL</p>
+      </div>
+      <div class="legenda" id="legenda"></div>
+    </div>
+    <div class="graf" id="curva"><div class="dica"></div></div>
+  </section>
+
+  <section class="cartao">
+    <div class="topo-graf">
+      <div>
+        <h2>Régua: fim do dia da estreia</h2>
+        <p class="sub">Mesmo CPL em todas as oficinas (CPL1 × CPL1, nunca CPL1 × CPL2)</p>
+      </div>
+      <div class="abas" id="abas"></div>
+    </div>
+    <div class="graf" id="regua"><div class="dica"></div></div>
+  </section>
+
+  <section class="cartao">
+    <details>
+      <summary>Ver os números em tabela</summary>
+      <div class="tabela" id="tabela"></div>
+    </details>
+  </section>
+
+  <p class="nota">
+    Ao vivo = contador público do YouTube, a cada hora; nas primeiras horas ele fica abaixo do Studio e converge depois.
+    A régua usa o YouTube Analytics (dia da estreia ≈ 97% do "Primeiras 24 horas" do Studio).
+    O % ao vivo usa os leads da planilha no momento da coleta: com a captação aberta, atualize os LEADS 1x por dia.
+    A página se atualiza sozinha a cada 10 minutos.
+  </p>
+</main>
+
+<script>
+const CORES = ["--s1", "--s2", "--s3", "--s4"];
+const cor = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const num = n => Math.round(n).toLocaleString("pt-BR");
+const pct = x => (x * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
+const pts = d => (d >= 0 ? "+" : "−") + Math.abs(d * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " pontos";
+const TOL = 0.02; // igual ao robo.py
+
+function csv(texto) {
+  const [cab, ...linhas] = texto.trim().split(/\r?\n/);
+  const k = cab.split(",");
+  return linhas.filter(Boolean).map(l => {
+    const v = l.split(",");
+    return Object.fromEntries(k.map((c, i) => [c, v[i] ?? ""]));
+  });
+}
+
+let SNAP = [], REGUA = [], estado = { lanc: null, cpl: "1" };
+
+async function carregar() {
+  const t = "?t=" + Date.now();
+  const [s, r] = await Promise.all([
+    fetch("dados/snapshots.csv" + t).then(x => x.text()),
+    fetch("dados/regua.csv" + t).then(x => x.text()),
+  ]);
+  SNAP = csv(s).map(l => ({
+    ts: l.TIMESTAMP, lanc: l.LANCAMENTO, tag: l.TAG, cpl: l.CPL,
+    h: +l.HORA_DESDE_PUBLICACAO, views: +l.VIEWS, pct: l.PCT_VIEWS === "" ? null : +l.PCT_VIEWS,
+  }));
+  REGUA = csv(r).map(l => ({ cpl: l.CPL, lanc: l.LANCAMENTO, pers: l.PERSONAGEM, leads: +l.LEADS, pct: +l.PCT / 100 }));
+
+  const lancs = [...new Set(SNAP.map(s => s.lanc))];
+  // o mais recente primeiro
+  lancs.sort((a, b) => ultimo(b).localeCompare(ultimo(a)));
+  const sel = document.getElementById("lanc");
+  sel.innerHTML = lancs.map(l => `<option>${l}</option>`).join("");
+  if (!estado.lanc || !lancs.includes(estado.lanc)) estado.lanc = lancs[0] || null;
+  sel.value = estado.lanc;
+  desenhar();
+}
+const ultimo = lanc => SNAP.filter(s => s.lanc === lanc).map(s => s.ts).sort().pop() || "";
+
+function porCpl(lanc) {
+  const m = {};
+  for (const s of SNAP.filter(s => s.lanc === lanc)) (m[s.cpl] ||= []).push(s);
+  for (const k in m) m[k].sort((a, b) => a.h - b.h);
+  return m;
+}
+// % congelado no fechamento do dia 1: a coleta mais tardia ate a hora 24 (mesma regra do robo.py)
+const fechamento = serie => serie.filter(s => s.pct !== null && s.h <= 24).pop() || null;
+
+function veredito(cpl, pctFech) {
+  const r = REGUA.filter(x => x.cpl === cpl);
+  if (!r.length) return null;
+  const media = r.reduce((a, x) => a + x.pct, 0) / r.length;
+  let st = "igual";
+  if (pctFech > media * (1 + TOL)) st = "bom";
+  else if (pctFech < media * (1 - TOL)) st = "ruim";
+  return { st, media, dif: pctFech - media };
+}
+
+function desenhar() {
+  const lanc = estado.lanc;
+  const at = document.getElementById("atualizado");
+  if (!lanc) {
+    at.textContent = "nenhuma coleta ainda";
+    document.getElementById("kpis").innerHTML = `<p class="vazio">Cadastre um CPL na aba CONFIG da planilha pra começar.</p>`;
+    return;
+  }
+  const u = ultimo(lanc);
+  at.textContent = `última coleta: ${u.slice(8, 10)}/${u.slice(5, 7)} às ${u.slice(11, 16)} (horário de Brasília)`;
+
+  const series = porCpl(lanc);
+  const cpls = Object.keys(series).sort();
+  const corDe = c => cor(CORES[(+c - 1) % 4]);
+
+  // ----- cartões -----
+  document.getElementById("kpis").innerHTML = cpls.map(c => {
+    const s = series[c], ult = s[s.length - 1], f = fechamento(s);
+    let status;
+    if (ult.h < 24 || !f) {
+      status = `<span class="status parcial">🕐 Parcial · faltam ${Math.max(24 - ult.h, 0)}h pra fechar o dia 1</span>`;
+    } else {
+      const v = veredito(c, f.pct);
+      status = !v ? `<span class="status parcial">Sem régua pra este CPL</span>` :
+        `<span class="status ${v.st}">${{ bom: "▲ Acima", ruim: "▼ Abaixo", igual: "● Na" }[v.st]} da média (${pts(v.dif)})</span>`;
+    }
+    // depois de 24h o numero que importa e o do fechamento (o acumulado nao se compara com a regua)
+    const fechou = f && ult.h >= 24;
+    const agora = `${ult.pct === null ? "" : pct(ult.pct) + " · "}${num(ult.views)} views`;
+    return `<div class="kpi">
+      <div class="rot"><span class="marca" style="background:${corDe(c)}"></span>CPL${c} · ${fechou ? "fim do dia 1" : "hora " + ult.h}</div>
+      <div class="grande">${fechou ? pct(f.pct) : ult.pct === null ? "—" : pct(ult.pct)}</div>
+      <div class="det">${fechou ? `agora (hora ${ult.h}): ${agora}` : num(ult.views) + " views"}</div>
+      ${status}
+    </div>`;
+  }).join("");
+
+  document.getElementById("legenda").innerHTML = cpls.length > 1
+    ? cpls.map(c => `<span><i style="background:${corDe(c)}"></i>CPL${c}</span>`).join("") : "";
+
+  curva(series, cpls, corDe);
+
+  // ----- abas da régua -----
+  const cplsRegua = [...new Set(REGUA.map(r => r.cpl))].sort();
+  if (!cplsRegua.includes(estado.cpl)) estado.cpl = cplsRegua[0];
+  document.getElementById("abas").innerHTML = cplsRegua.map(c =>
+    `<button aria-pressed="${c === estado.cpl}" data-cpl="${c}">CPL${c}</button>`).join("");
+  document.querySelectorAll("#abas button").forEach(b => b.onclick = () => { estado.cpl = b.dataset.cpl; desenhar(); });
+  regua(lanc, series[estado.cpl]);
+
+  // ----- tabela -----
+  document.getElementById("tabela").innerHTML = `<table><thead><tr><th>Coleta</th><th>CPL</th><th>Hora</th><th>Views</th><th>% dos leads</th></tr></thead><tbody>${
+    SNAP.filter(s => s.lanc === lanc).slice().reverse().map(s =>
+      `<tr><td>${s.ts.slice(8, 10)}/${s.ts.slice(5, 7)} ${s.ts.slice(11, 16)}</td><td>${s.cpl}</td><td>${s.h}</td><td>${num(s.views)}</td><td>${s.pct === null ? "—" : pct(s.pct)}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+function svgEl(caixa, w, h) {
+  caixa.querySelector("svg")?.remove();
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  caixa.prepend(s);
+  return s;
+}
+const passo = max => { const b = [0.05, 0.1, 0.2, 0.25, 0.5, 1]; return b.find(x => max / x <= 6) || 1; };
+
+function curva(series, cpls, corDe) {
+  const caixa = document.getElementById("curva"), dica = caixa.querySelector(".dica");
+  const W = Math.max(caixa.clientWidth, 300), H = W < 560 ? 240 : 300;
+  const m = { t: 12, r: 64, b: 30, l: 44 };
+  const todos = cpls.flatMap(c => series[c].filter(s => s.pct !== null));
+  const s = svgEl(caixa, W, H);
+  if (!todos.length) { s.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle">sem % ainda (preencha os LEADS)</text>`; return; }
+  const xMax = Math.max(24, ...todos.map(d => d.h));
+  const yMax = Math.max(...todos.map(d => d.pct)) * 1.08;
+  const X = h => m.l + (h / xMax) * (W - m.l - m.r);
+  const Y = p => H - m.b - (p / yMax) * (H - m.t - m.b);
+  const pY = passo(yMax), pX = xMax <= 48 ? 6 : xMax <= 120 ? 12 : 24;
+  let g = "";
+  for (let v = 0; v <= yMax; v += pY) g += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${cor("--grade")}"/><text x="${m.l - 6}" y="${Y(v) + 4}" text-anchor="end">${Math.round(v * 100)}%</text>`;
+  for (let h = 0; h <= xMax; h += pX) g += `<text x="${X(h)}" y="${H - 10}" text-anchor="middle">${h}h</text>`;
+  g += `<line x1="${X(24)}" x2="${X(24)}" y1="${m.t}" y2="${H - m.b}" stroke="${cor("--texto-3")}" stroke-dasharray="3 3"/><text x="${X(24) + 4}" y="${m.t + 10}">fim do dia 1</text>`;
+  for (const c of cpls) {
+    const d = series[c].filter(s => s.pct !== null); if (!d.length) continue;
+    const k = corDe(c), fim = d[d.length - 1];
+    g += `<polyline fill="none" stroke="${k}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${d.map(p => `${X(p.h)},${Y(p.pct)}`).join(" ")}"/>`;
+    g += `<circle cx="${X(fim.h)}" cy="${Y(fim.pct)}" r="4" fill="${k}" stroke="${cor("--surface")}" stroke-width="2"/>`;
+    g += `<text x="${X(fim.h) + 8}" y="${Y(fim.pct) + 4}" style="fill:${cor("--texto")}">CPL${c} ${pct(fim.pct)}</text>`;
+  }
+  g += `<line id="mira" y1="${m.t}" y2="${H - m.b}" stroke="${cor("--texto-2")}" visibility="hidden"/>`;
+  g += `<rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" id="alvo"/>`;
+  s.innerHTML = g;
+  const mira = s.querySelector("#mira");
+  const mover = ev => {
+    const r = s.getBoundingClientRect(), esc = W / r.width;
+    const h = Math.round(((ev.clientX - r.left) * esc - m.l) / (W - m.l - m.r) * xMax);
+    const linhas = cpls.map(c => {
+      const d = series[c].filter(p => p.pct !== null);
+      const p = d.reduce((a, b) => Math.abs(b.h - h) < Math.abs(a.h - h) ? b : a, d[0]);
+      return p && Math.abs(p.h - h) <= 3 ? `<div><span style="color:${corDe(c)}">■</span> CPL${c} · hora ${p.h}: <b>${pct(p.pct)}</b> · ${num(p.views)} views</div>` : "";
+    }).join("");
+    if (!linhas) { sair(); return; }
+    mira.setAttribute("x1", X(h)); mira.setAttribute("x2", X(h)); mira.setAttribute("visibility", "visible");
+    dica.innerHTML = linhas; dica.style.display = "block";
+    const px = (ev.clientX - r.left);
+    dica.style.left = Math.min(px + 12, r.width - dica.offsetWidth) + "px";
+    dica.style.top = "8px";
+  };
+  const sair = () => { dica.style.display = "none"; mira.setAttribute("visibility", "hidden"); };
+  const alvo = s.querySelector("#alvo");
+  alvo.onpointermove = mover; alvo.onpointerleave = sair;
+}
+
+function regua(lanc, serieAtual) {
+  const caixa = document.getElementById("regua"), dica = caixa.querySelector(".dica");
+  const linhas = REGUA.filter(r => r.cpl === estado.cpl).map(r => ({ ...r, atual: r.pers.includes(lanc) }));
+  // lancamento atual ainda fora da regua: entra com o % ao vivo congelado nas 24h
+  const f = serieAtual && fechamento(serieAtual);
+  if (f && !linhas.some(l => l.atual)) linhas.push({ pers: `${lanc} (ao vivo${f.h < 24 ? `, hora ${f.h}` : ""})`, lanc: "este lançamento", leads: null, pct: f.pct, atual: true });
+  linhas.sort((a, b) => b.pct - a.pct);
+  const media = REGUA.filter(r => r.cpl === estado.cpl).reduce((a, x, _, arr) => a + x.pct / arr.length, 0);
+
+  const W = Math.max(caixa.clientWidth, 300), estreito = W < 560;
+  const barra = 22, gap = 8, m = { t: 22, r: 56, b: 8, l: estreito ? 128 : 190 };
+  const H = m.t + linhas.length * (barra + gap) + m.b;
+  const xMax = Math.max(...linhas.map(l => l.pct), media) * 1.02;
+  const X = p => m.l + (p / xMax) * (W - m.l - m.r);
+  const s = svgEl(caixa, W, H);
+  let g = "";
+  linhas.forEach((l, i) => {
+    const y = m.t + i * (barra + gap), k = l.atual ? cor("--s2") : cor("--s1");
+    const w = Math.max(X(l.pct) - m.l, 2), rr = 4;
+    const nome = estreito && l.pers.length > 18 ? l.pers.slice(0, 17) + "…" : l.pers;
+    g += `<g class="barra" data-i="${i}">
+      <rect x="0" y="${y - gap / 2}" width="${W}" height="${barra + gap}" fill="transparent"/>
+      <text x="${m.l - 8}" y="${y + barra / 2 + 4}" text-anchor="end" style="${l.atual ? `fill:${cor("--texto")};font-weight:650` : ""}">${nome}</text>
+      <path d="M${m.l},${y} h${w - rr} a${rr},${rr} 0 0 1 ${rr},${rr} v${barra - 2 * rr} a${rr},${rr} 0 0 1 -${rr},${rr} h-${w - rr} z" fill="${k}"/>
+      <text x="${m.l + w + 6}" y="${y + barra / 2 + 4}" style="fill:${cor("--texto")}">${pct(l.pct)}</text>
+    </g>`;
+  });
+  g += `<line x1="${X(media)}" x2="${X(media)}" y1="${m.t - 6}" y2="${H - m.b}" stroke="${cor("--texto")}" stroke-dasharray="4 3"/>
+    <text x="${X(media)}" y="${m.t - 10}" text-anchor="middle" style="fill:${cor("--texto")}">média ${pct(media)}</text>`;
+  s.innerHTML = g;
+  s.querySelectorAll(".barra").forEach(el => {
+    const l = linhas[+el.dataset.i];
+    el.onpointermove = ev => {
+      const r = caixa.getBoundingClientRect();
+      dica.innerHTML = `<b>${l.pers}</b> · ${l.lanc}<br>${pct(l.pct)} dos leads no dia 1${l.leads ? ` · ${num(l.leads)} leads` : ""}<br>${pts(l.pct - media)} vs média`;
+      dica.style.display = "block";
+      dica.style.left = Math.min(ev.clientX - r.left + 12, r.width - dica.offsetWidth) + "px";
+      dica.style.top = (ev.clientY - r.top + 12) + "px";
+    };
+    el.onpointerleave = () => dica.style.display = "none";
+  });
+}
+
+document.getElementById("lanc").onchange = e => { estado.lanc = e.target.value; desenhar(); };
+let t; addEventListener("resize", () => { clearTimeout(t); t = setTimeout(desenhar, 150); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", desenhar);
+carregar().catch(e => { document.getElementById("atualizado").textContent = "erro ao carregar os dados: " + e.message; });
+setInterval(() => carregar().catch(() => {}), 10 * 60 * 1000);
+</script>
+</body>
+</html>
