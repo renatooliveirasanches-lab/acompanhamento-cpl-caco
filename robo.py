@@ -83,11 +83,24 @@ def ler_config():
             "lancamento": r.get("LANCAMENTO", ""),
             "tag": r.get("TAG", ""),
             "personagem": r.get("PERSONAGEM", ""),
-            "cpl": r.get("CPL", ""),
+            "cpl": normalizar_cpl(r.get("CPL", "")),
             "video_id": video_id,
             "leads": leads,
         })
     return ativos
+
+
+def normalizar_cpl(valor):
+    """'1' -> '1' (CPL1) · 'AQ2', 'A2', 'Aquecimento 2' -> 'AQ2' (aquecimento)."""
+    v = (valor or "").strip().upper()
+    if v.startswith("A"):
+        return "AQ" + re.sub(r"\D", "", v)
+    return v
+
+
+def rotulo(cpl):
+    """Nome pra gente ler: 'AQ2' -> 'Aquecimento 2' · '1' -> 'CPL1'."""
+    return f"Aquecimento {cpl[2:]}" if cpl.startswith("AQ") else f"CPL{cpl}"
 
 
 def extrair_video_id(entrada):
@@ -259,12 +272,12 @@ def montar_mensagem(itens, agora):
     msg = f"📊 *ACOMPANHAMENTO CPL* — {data}\n"
     for it in itens:
         pct_txt = "—" if it["pct"] is None else pctfmt(it["pct"])
-        msg += (f"\n*{it['lancamento']}* · CPL{it['cpl']} ({it['personagem']})"
+        msg += (f"\n*{it['lancamento']}* · {rotulo(it['cpl'])} ({it['personagem']})"
                 f"\nhora {it['horas']}: {nfmt(it['views'])} views · *{pct_txt}* dos leads\n")
 
         comp = it["comp"]
         if not comp:
-            msg += "⚪️ sem régua pra esse CPL ainda\n"
+            msg += "⚪️ sem régua pra esse vídeo ainda\n"
             continue
 
         if comp["fechou"]:
@@ -277,7 +290,7 @@ def montar_mensagem(itens, agora):
             faltam = 24 - it["horas"]
             msg += f"🕐 parcial — faltam {faltam}h pra fechar o dia 1\n"
 
-        msg += f"\n_Régua do CPL{it['cpl']} (dia da estreia, {comp['qtd']} oficinas):_\n"
+        msg += f"\n_Régua do {rotulo(it['cpl'])} (dia da estreia, {comp['qtd']} oficinas):_\n"
         p = comp["parecido"]
         if p:
             msg += f"  base parecida · {p['personagem']}: {pctfmt(p['pct'])}\n"
@@ -310,7 +323,7 @@ def main():
     for cfg in ativos:
         stats = buscar_estatisticas(cfg["video_id"])
         if not stats or not stats["publishedAt"]:
-            print(f"Video {cfg['video_id']} ({cfg['lancamento']} CPL{cfg['cpl']}) nao encontrado: "
+            print(f"Video {cfg['video_id']} ({cfg['lancamento']} {rotulo(cfg['cpl'])}) nao encontrado: "
                   "privado ou apagado? Desmarque ATIVO na planilha.", file=sys.stderr)
             continue
         horas = int((agora - stats["publishedAt"]).total_seconds() // 3600)

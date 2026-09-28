@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Views dos CPLs</title>
+<title>Views do Lançamento</title>
 <style>
 :root{
   color-scheme:light;
   --bg:#f6f5f2; --surface:#fcfcfb; --borda:#e4e2dc; --grade:#ecebe6;
   --texto:#0b0b0b; --texto-2:#52514e; --texto-3:#7a7974;
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#8a5cd6; --s6:#d6336c;
   --bom:#1a7f37; --ruim:#c62f2f; --neutro:#9a6700;
 }
 @media (prefers-color-scheme:dark){
@@ -17,7 +17,7 @@
     color-scheme:dark;
     --bg:#121211; --surface:#1a1a19; --borda:#2e2e2b; --grade:#262624;
     --texto:#fff; --texto-2:#c3c2b7; --texto-3:#8f8e86;
-    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#9a6fe0; --s6:#e0507f;
     --bom:#4ac26b; --ruim:#ff7b72; --neutro:#d4a72c;
   }
 }
@@ -25,7 +25,7 @@
   color-scheme:dark;
   --bg:#121211; --surface:#1a1a19; --borda:#2e2e2b; --grade:#262624;
   --texto:#fff; --texto-2:#c3c2b7; --texto-3:#8f8e86;
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#9a6fe0; --s6:#e0507f;
   --bom:#4ac26b; --ruim:#ff7b72; --neutro:#d4a72c;
 }
 *{box-sizing:border-box}
@@ -71,10 +71,13 @@ th{color:var(--texto-2);font-weight:600}
 <main>
   <header>
     <div>
-      <h1>Views dos CPLs</h1>
+      <h1>Views do lançamento</h1>
       <p class="sub" id="atualizado">carregando…</p>
     </div>
-    <label class="sub">Lançamento&nbsp; <select id="lanc"></select></label>
+    <div class="abas">
+      <div class="abas" id="tipo"></div>
+      <label class="sub">Lançamento&nbsp; <select id="lanc"></select></label>
+    </div>
   </header>
 
   <section class="kpis" id="kpis"></section>
@@ -83,7 +86,7 @@ th{color:var(--texto-2);font-weight:600}
     <div class="topo-graf">
       <div>
         <h2>Views sobre os leads, hora a hora</h2>
-        <p class="sub">% dos leads que já assistiram, contando da publicação de cada CPL</p>
+        <p class="sub">% dos leads que já assistiram, contando da publicação de cada vídeo</p>
       </div>
       <div class="legenda" id="legenda"></div>
     </div>
@@ -94,7 +97,7 @@ th{color:var(--texto-2);font-weight:600}
     <div class="topo-graf">
       <div>
         <h2>Régua: fim do dia da estreia</h2>
-        <p class="sub">Mesmo CPL em todas as oficinas (CPL1 × CPL1, nunca CPL1 × CPL2)</p>
+        <p class="sub">Mesmo vídeo em todas as oficinas (CPL1 × CPL1, Aquecimento 1 × Aquecimento 1)</p>
       </div>
       <div class="abas" id="abas"></div>
     </div>
@@ -117,7 +120,12 @@ th{color:var(--texto-2);font-weight:600}
 </main>
 
 <script>
-const CORES = ["--s1", "--s2", "--s3", "--s4"];
+const CORES = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"];
+// na coluna CPL da planilha: "1".."4" = CPL · "AQ1".."AQ6" = aquecimento (o robo.py normaliza)
+const ehAq = c => c.startsWith("AQ");
+const rotulo = c => ehAq(c) ? "Aquecimento " + c.slice(2) : "CPL" + c;
+const doTipo = c => ehAq(c) === (estado.tipo === "AQ");
+const porNumero = (a, b) => +a.replace(/\D/g, "") - +b.replace(/\D/g, "");
 const cor = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const num = n => Math.round(n).toLocaleString("pt-BR");
 const pct = x => (x * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
@@ -133,7 +141,7 @@ function csv(texto) {
   });
 }
 
-let SNAP = [], REGUA = [], estado = { lanc: null, cpl: "1" };
+let SNAP = [], REGUA = [], estado = { lanc: null, cpl: "1", tipo: "CPL" };
 
 async function carregar() {
   const t = "?t=" + Date.now();
@@ -182,32 +190,42 @@ function desenhar() {
   const at = document.getElementById("atualizado");
   if (!lanc) {
     at.textContent = "nenhuma coleta ainda";
-    document.getElementById("kpis").innerHTML = `<p class="vazio">Cadastre um CPL na aba CONFIG da planilha pra começar.</p>`;
+    document.getElementById("kpis").innerHTML = `<p class="vazio">Cadastre um CPL ou aquecimento na aba CONFIG da planilha pra começar.</p>`;
     return;
   }
   const u = ultimo(lanc);
   at.textContent = `última coleta: ${u.slice(8, 10)}/${u.slice(5, 7)} às ${u.slice(11, 16)} (horário de Brasília)`;
 
   const series = porCpl(lanc);
-  const cpls = Object.keys(series).sort();
-  const corDe = c => cor(CORES[(+c - 1) % 4]);
+  // abre em Aquecimento enquanto o lançamento ainda não tem CPL
+  const todos = Object.keys(series);
+  if (!estado.tipoEscolhido) estado.tipo = todos.some(c => !ehAq(c)) || !todos.length ? "CPL" : "AQ";
+  document.getElementById("tipo").innerHTML = [["AQ", "Aquecimento"], ["CPL", "CPLs"]].map(([t, n]) =>
+    `<button aria-pressed="${t === estado.tipo}" data-tipo="${t}">${n}</button>`).join("");
+  document.querySelectorAll("#tipo button").forEach(b => b.onclick = () => {
+    estado.tipo = b.dataset.tipo; estado.tipoEscolhido = true; desenhar();
+  });
+  const cpls = todos.filter(doTipo).sort(porNumero);
+  const corDe = c => cor(CORES[(+c.replace(/\D/g, "") - 1) % CORES.length]);
 
   // ----- cartões -----
-  document.getElementById("kpis").innerHTML = cpls.map(c => {
+  document.getElementById("kpis").innerHTML = !cpls.length
+    ? `<p class="vazio">Nenhum ${estado.tipo === "AQ" ? "aquecimento" : "CPL"} cadastrado neste lançamento ainda.</p>`
+    : cpls.map(c => {
     const s = series[c], ult = s[s.length - 1], f = fechamento(s);
     let status;
     if (ult.h < 24 || !f) {
       status = `<span class="status parcial">🕐 Parcial · faltam ${Math.max(24 - ult.h, 0)}h pra fechar o dia 1</span>`;
     } else {
       const v = veredito(c, f.pct);
-      status = !v ? `<span class="status parcial">Sem régua pra este CPL</span>` :
+      status = !v ? `<span class="status parcial">Sem régua pra este vídeo</span>` :
         `<span class="status ${v.st}">${{ bom: "▲ Acima", ruim: "▼ Abaixo", igual: "● Na" }[v.st]} da média (${pts(v.dif)})</span>`;
     }
     // depois de 24h o numero que importa e o do fechamento (o acumulado nao se compara com a regua)
     const fechou = f && ult.h >= 24;
     const agora = `${ult.pct === null ? "" : pct(ult.pct) + " · "}${num(ult.views)} views`;
     return `<div class="kpi">
-      <div class="rot"><span class="marca" style="background:${corDe(c)}"></span>CPL${c} · ${fechou ? "fim do dia 1" : "hora " + ult.h}</div>
+      <div class="rot"><span class="marca" style="background:${corDe(c)}"></span>${rotulo(c)} · ${fechou ? "fim do dia 1" : "hora " + ult.h}</div>
       <div class="grande">${fechou ? pct(f.pct) : ult.pct === null ? "—" : pct(ult.pct)}</div>
       <div class="det">${fechou ? `agora (hora ${ult.h}): ${agora}` : num(ult.views) + " views"}</div>
       ${status}
@@ -215,22 +233,26 @@ function desenhar() {
   }).join("");
 
   document.getElementById("legenda").innerHTML = cpls.length > 1
-    ? cpls.map(c => `<span><i style="background:${corDe(c)}"></i>CPL${c}</span>`).join("") : "";
+    ? cpls.map(c => `<span><i style="background:${corDe(c)}"></i>${rotulo(c)}</span>`).join("") : "";
 
   curva(series, cpls, corDe);
 
   // ----- abas da régua -----
-  const cplsRegua = [...new Set(REGUA.map(r => r.cpl))].sort();
+  const cplsRegua = [...new Set(REGUA.map(r => r.cpl))].filter(doTipo).sort(porNumero);
   if (!cplsRegua.includes(estado.cpl)) estado.cpl = cplsRegua[0];
   document.getElementById("abas").innerHTML = cplsRegua.map(c =>
-    `<button aria-pressed="${c === estado.cpl}" data-cpl="${c}">CPL${c}</button>`).join("");
+    `<button aria-pressed="${c === estado.cpl}" data-cpl="${c}">${rotulo(c)}</button>`).join("");
   document.querySelectorAll("#abas button").forEach(b => b.onclick = () => { estado.cpl = b.dataset.cpl; desenhar(); });
-  regua(lanc, series[estado.cpl]);
+  if (cplsRegua.length) regua(lanc, series[estado.cpl]);
+  else {
+    const c = document.getElementById("regua"), W = Math.max(c.clientWidth, 300);
+    svgEl(c, W, 80).innerHTML = `<text x="${W / 2}" y="44" text-anchor="middle">régua dos aquecimentos ainda não montada</text>`;
+  }
 
   // ----- tabela -----
-  document.getElementById("tabela").innerHTML = `<table><thead><tr><th>Coleta</th><th>CPL</th><th>Hora</th><th>Views</th><th>% dos leads</th></tr></thead><tbody>${
+  document.getElementById("tabela").innerHTML = `<table><thead><tr><th>Coleta</th><th>Vídeo</th><th>Hora</th><th>Views</th><th>% dos leads</th></tr></thead><tbody>${
     SNAP.filter(s => s.lanc === lanc).slice().reverse().map(s =>
-      `<tr><td>${s.ts.slice(8, 10)}/${s.ts.slice(5, 7)} ${s.ts.slice(11, 16)}</td><td>${s.cpl}</td><td>${s.h}</td><td>${num(s.views)}</td><td>${s.pct === null ? "—" : pct(s.pct)}</td></tr>`).join("")
+      `<tr><td>${s.ts.slice(8, 10)}/${s.ts.slice(5, 7)} ${s.ts.slice(11, 16)}</td><td>${rotulo(s.cpl)}</td><td>${s.h}</td><td>${num(s.views)}</td><td>${s.pct === null ? "—" : pct(s.pct)}</td></tr>`).join("")
   }</tbody></table>`;
 }
 
@@ -249,7 +271,7 @@ function curva(series, cpls, corDe) {
   const m = { t: 12, r: 64, b: 30, l: 44 };
   const todos = cpls.flatMap(c => series[c].filter(s => s.pct !== null));
   const s = svgEl(caixa, W, H);
-  if (!todos.length) { s.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle">sem % ainda (preencha os LEADS)</text>`; return; }
+  if (!todos.length) { s.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle">${cpls.length ? "sem % ainda (preencha os LEADS)" : "nada coletado ainda"}</text>`; return; }
   const xMax = Math.max(24, ...todos.map(d => d.h));
   const yMax = Math.max(...todos.map(d => d.pct)) * 1.08;
   const X = h => m.l + (h / xMax) * (W - m.l - m.r);
@@ -264,7 +286,7 @@ function curva(series, cpls, corDe) {
     const k = corDe(c), fim = d[d.length - 1];
     g += `<polyline fill="none" stroke="${k}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${d.map(p => `${X(p.h)},${Y(p.pct)}`).join(" ")}"/>`;
     g += `<circle cx="${X(fim.h)}" cy="${Y(fim.pct)}" r="4" fill="${k}" stroke="${cor("--surface")}" stroke-width="2"/>`;
-    g += `<text x="${X(fim.h) + 8}" y="${Y(fim.pct) + 4}" style="fill:${cor("--texto")}">CPL${c} ${pct(fim.pct)}</text>`;
+    g += `<text x="${X(fim.h) + 8}" y="${Y(fim.pct) + 4}" style="fill:${cor("--texto")}">${rotulo(c)} ${pct(fim.pct)}</text>`;
   }
   g += `<line id="mira" y1="${m.t}" y2="${H - m.b}" stroke="${cor("--texto-2")}" visibility="hidden"/>`;
   g += `<rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" id="alvo"/>`;
@@ -276,7 +298,7 @@ function curva(series, cpls, corDe) {
     const linhas = cpls.map(c => {
       const d = series[c].filter(p => p.pct !== null);
       const p = d.reduce((a, b) => Math.abs(b.h - h) < Math.abs(a.h - h) ? b : a, d[0]);
-      return p && Math.abs(p.h - h) <= 3 ? `<div><span style="color:${corDe(c)}">■</span> CPL${c} · hora ${p.h}: <b>${pct(p.pct)}</b> · ${num(p.views)} views</div>` : "";
+      return p && Math.abs(p.h - h) <= 3 ? `<div><span style="color:${corDe(c)}">■</span> ${rotulo(c)} · hora ${p.h}: <b>${pct(p.pct)}</b> · ${num(p.views)} views</div>` : "";
     }).join("");
     if (!linhas) { sair(); return; }
     mira.setAttribute("x1", X(h)); mira.setAttribute("x2", X(h)); mira.setAttribute("visibility", "visible");

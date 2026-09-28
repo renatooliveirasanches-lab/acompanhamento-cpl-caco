@@ -105,3 +105,11 @@ if __name__ == "__main__":
             fn()
             print(f"ok  {nome}")
     print("\nTudo passou.")
+
+
+def test_aquecimento_tem_nome_proprio_e_nao_mistura_com_cpl():
+    assert robo.normalizar_cpl("Aquecimento 2") == "AQ2"
+    assert robo.normalizar_cpl("a2") == "AQ2"
+    assert robo.normalizar_cpl("2") == "2"
+    assert robo.rotulo("AQ2") == "Aquecimento 2"
+    assert robo.rotulo("2") == "CPL2"
