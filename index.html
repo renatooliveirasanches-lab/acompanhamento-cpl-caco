@@ -206,7 +206,7 @@ function desenhar() {
     estado.tipo = b.dataset.tipo; estado.tipoEscolhido = true; desenhar();
   });
   const cpls = todos.filter(doTipo).sort(porNumero);
-  const corDe = c => cor(CORES[(+c.replace(/\D/g, "") - 1) % CORES.length]);
+  const corDe = c => cor(CORES[cpls.indexOf(c) % CORES.length]); // AQ0 existe: cor pela posição
 
   // ----- cartões -----
   document.getElementById("kpis").innerHTML = !cpls.length

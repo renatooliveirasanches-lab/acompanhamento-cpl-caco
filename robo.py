@@ -72,7 +72,9 @@ def ler_config():
         r = {(k or "").strip().upper(): (v or "").strip() for k, v in r.items()}
         if r.get("ATIVO", "").lower() != "sim":
             continue
-        video_id = extrair_video_id(r.get("VIDEO_ID", ""))
+        # varios links na mesma celula (virgula/espaco) = mesmo conteudo publicado 2x: soma as views
+        ids = [extrair_video_id(p) for p in re.split(r"[,;\s]+", r.get("VIDEO_ID", ""))]
+        video_id = "+".join(i for i in ids if i)
         if not video_id:
             continue
         try:
@@ -126,9 +128,14 @@ def extrair_video_id(entrada):
 # ===================== YOUTUBE =====================
 
 def buscar_estatisticas(video_id):
-    """Le as estatisticas publicas do video pela YouTube Data API (chave)."""
+    """
+    Le as estatisticas publicas pela YouTube Data API (chave).
+    'id1+id2' = mesmo conteudo em 2 videos: soma views/likes/comentarios e conta
+    as horas a partir do primeiro publicado.
+    """
     url = "https://www.googleapis.com/youtube/v3/videos"
-    params = {"part": "statistics,snippet", "id": video_id, "key": YOUTUBE_API_KEY}
+    ids = video_id.split("+")
+    params = {"part": "statistics,snippet", "id": ",".join(ids), "key": YOUTUBE_API_KEY}
     data = json.loads(_get(url, params))
     if data.get("error"):
         print(f"Erro YouTube API ({video_id}): {data['error']}", file=sys.stderr)
@@ -136,14 +143,16 @@ def buscar_estatisticas(video_id):
     itens = data.get("items", [])
     if not itens:
         return None
-    item = itens[0]
-    st = item.get("statistics", {})
-    pub = item.get("snippet", {}).get("publishedAt")
+    if len(itens) < len(ids):
+        print(f"Aviso: so {len(itens)} de {len(ids)} videos encontrados em {video_id}", file=sys.stderr)
+    soma = lambda campo: sum(int(i.get("statistics", {}).get(campo, 0) or 0) for i in itens)
+    pubs = [datetime.fromisoformat(p.replace("Z", "+00:00"))
+            for p in (i.get("snippet", {}).get("publishedAt") for i in itens) if p]
     return {
-        "views": int(st.get("viewCount", 0) or 0),
-        "likes": int(st.get("likeCount", 0) or 0),
-        "comments": int(st.get("commentCount", 0) or 0),
-        "publishedAt": datetime.fromisoformat(pub.replace("Z", "+00:00")) if pub else None,
+        "views": soma("viewCount"),
+        "likes": soma("likeCount"),
+        "comments": soma("commentCount"),
+        "publishedAt": min(pubs) if pubs else None,
     }
 
 

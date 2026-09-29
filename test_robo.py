@@ -113,3 +113,18 @@ def test_aquecimento_tem_nome_proprio_e_nao_mistura_com_cpl():
     assert robo.normalizar_cpl("2") == "2"
     assert robo.rotulo("AQ2") == "Aquecimento 2"
     assert robo.rotulo("2") == "CPL2"
+
+
+def test_dois_videos_do_mesmo_aquecimento_somam():
+    resposta = {"items": [
+        {"statistics": {"viewCount": "100", "likeCount": "5"}, "snippet": {"publishedAt": "2026-09-27T12:00:00Z"}},
+        {"statistics": {"viewCount": "50", "likeCount": "1"}, "snippet": {"publishedAt": "2026-09-27T10:00:00Z"}},
+    ]}
+    original = robo._get
+    robo._get = lambda url, params=None, timeout=30: robo.json.dumps(resposta)
+    try:
+        st = robo.buscar_estatisticas("aaaaaaaaaaa+bbbbbbbbbbb")
+    finally:
+        robo._get = original
+    assert st["views"] == 150 and st["likes"] == 6
+    assert st["publishedAt"].hour == 10  # conta do primeiro publicado
