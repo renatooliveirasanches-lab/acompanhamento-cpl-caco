@@ -214,8 +214,12 @@ function desenhar() {
     : cpls.map(c => {
     const s = series[c], ult = s[s.length - 1], f = fechamento(s);
     let status;
-    if (ult.h < 24 || !f) {
-      status = `<span class="status parcial">🕐 Parcial · faltam ${Math.max(24 - ult.h, 0)}h pra fechar o dia 1</span>`;
+    if (ult.pct === null) {
+      status = `<span class="status parcial">Sem % · falta preencher os LEADS</span>`;
+    } else if (!f) {
+      status = `<span class="status parcial">Acompanhamento começou depois do dia 1</span>`;
+    } else if (ult.h < 24) {
+      status = `<span class="status parcial">🕐 Parcial · faltam ${24 - ult.h}h pra fechar o dia 1</span>`;
     } else {
       const v = veredito(c, f.pct);
       status = !v ? `<span class="status parcial">Sem régua pra este vídeo</span>` :

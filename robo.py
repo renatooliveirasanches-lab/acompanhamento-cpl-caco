@@ -361,7 +361,7 @@ def main():
         gravar_snapshots(novas_linhas)
     if itens_resumo:
         enviar_telegram(montar_mensagem(itens_resumo, agora_br))
-        print(f"OK: {len(itens_resumo)} CPL(s) coletados e enviados ao Telegram.")
+        print(f"OK: {len(itens_resumo)} video(s) coletados e enviados ao Telegram.")
 
 
 if __name__ == "__main__":
