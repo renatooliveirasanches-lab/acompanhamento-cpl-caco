@@ -113,7 +113,7 @@ th{color:var(--texto-2);font-weight:600}
 
   <p class="nota">
     Ao vivo = contador público do YouTube, a cada hora; nas primeiras horas ele fica abaixo do Studio e converge depois.
-    A régua usa o YouTube Analytics (dia da estreia ≈ 97% do "Primeiras 24 horas" do Studio).
+    Espectadores únicos = YouTube Studio, lido pelo robô do Mac 1x por hora (o Studio fecha esse número com ~1 dia de atraso). A régua usa o YouTube Analytics (dia da estreia ≈ 97% do "Primeiras 24 horas" do Studio).
     O % ao vivo usa os leads da planilha no momento da coleta: com a captação aberta, atualize os LEADS 1x por dia.
     A página se atualiza sozinha a cada 10 minutos.
   </p>
@@ -152,6 +152,7 @@ async function carregar() {
   SNAP = csv(s).map(l => ({
     ts: l.TIMESTAMP, lanc: l.LANCAMENTO, tag: l.TAG, cpl: l.CPL,
     h: +l.HORA_DESDE_PUBLICACAO, views: +l.VIEWS, pct: l.PCT_VIEWS === "" ? null : +l.PCT_VIEWS,
+    unicos: +(l.ESPECTADORES_UNICOS || 0), pctU: l.PCT_UNICOS ? +l.PCT_UNICOS : null,
   }));
   REGUA = csv(r).map(l => ({ cpl: l.CPL, lanc: l.LANCAMENTO, pers: l.PERSONAGEM, leads: +l.LEADS, pct: +l.PCT / 100 }));
 
@@ -232,6 +233,7 @@ function desenhar() {
       <div class="rot"><span class="marca" style="background:${corDe(c)}"></span>${rotulo(c)} · ${fechou ? "fim do dia 1" : "hora " + ult.h}</div>
       <div class="grande">${fechou ? pct(f.pct) : ult.pct === null ? "—" : pct(ult.pct)}</div>
       <div class="det">${fechou ? `agora (hora ${ult.h}): ${agora}` : num(ult.views) + " views"}</div>
+      ${ult.pctU === null ? "" : `<div class="det">espectadores únicos: <b>${pct(ult.pctU)}</b> · ${num(ult.unicos)} (Studio, até ontem)</div>`}
       ${status}
     </div>`;
   }).join("");
@@ -254,9 +256,9 @@ function desenhar() {
   }
 
   // ----- tabela -----
-  document.getElementById("tabela").innerHTML = `<table><thead><tr><th>Coleta</th><th>Vídeo</th><th>Hora</th><th>Views</th><th>% dos leads</th></tr></thead><tbody>${
+  document.getElementById("tabela").innerHTML = `<table><thead><tr><th>Coleta</th><th>Vídeo</th><th>Hora</th><th>Views</th><th>% dos leads</th><th>Únicos</th><th>% únicos</th></tr></thead><tbody>${
     SNAP.filter(s => s.lanc === lanc).slice().reverse().map(s =>
-      `<tr><td>${s.ts.slice(8, 10)}/${s.ts.slice(5, 7)} ${s.ts.slice(11, 16)}</td><td>${rotulo(s.cpl)}</td><td>${s.h}</td><td>${num(s.views)}</td><td>${s.pct === null ? "—" : pct(s.pct)}</td></tr>`).join("")
+      `<tr><td>${s.ts.slice(8, 10)}/${s.ts.slice(5, 7)} ${s.ts.slice(11, 16)}</td><td>${rotulo(s.cpl)}</td><td>${s.h}</td><td>${num(s.views)}</td><td>${s.pct === null ? "—" : pct(s.pct)}</td><td>${s.unicos ? num(s.unicos) : "—"}</td><td>${s.pctU === null ? "—" : pct(s.pctU)}</td></tr>`).join("")
   }</tbody></table>`;
 }
 

@@ -1,5 +1,6 @@
 """Checagem da comparacao com a regua. Roda com: python3 test_robo.py"""
 
+import tempfile
 import robo
 
 REGUA = {
@@ -128,3 +129,19 @@ def test_dois_videos_do_mesmo_aquecimento_somam():
         robo._get = original
     assert st["views"] == 150 and st["likes"] == 6
     assert st["publishedAt"].hour == 10  # conta do primeiro publicado
+
+
+def test_cabecalho_antigo_ganha_colunas_novas(tmp=None):
+
+    pasta = tempfile.mkdtemp()
+    arq = robo.os.path.join(pasta, "snap.csv")
+    open(arq, "w").write("TIMESTAMP,LANCAMENTO\nx,y\n")
+    original = robo.ARQUIVO_SNAPSHOTS
+    robo.ARQUIVO_SNAPSHOTS = arq
+    try:
+        robo.gravar_snapshots([["a"] * len(robo.CABECALHO_SNAPSHOTS)])
+    finally:
+        robo.ARQUIVO_SNAPSHOTS = original
+    linhas = open(arq).read().splitlines()
+    assert linhas[0] == ",".join(robo.CABECALHO_SNAPSHOTS)
+    assert linhas[1] == "x,y" and len(linhas) == 3

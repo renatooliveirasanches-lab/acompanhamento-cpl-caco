@@ -53,6 +53,7 @@ ARQUIVO_REGUA = os.path.join("dados", "regua.csv")
 CABECALHO_SNAPSHOTS = [
     "TIMESTAMP", "LANCAMENTO", "TAG", "CPL", "VIDEO_ID",
     "HORA_DESDE_PUBLICACAO", "VIEWS", "LIKES", "COMENTARIOS", "PCT_VIEWS",
+    "ESPECTADORES_UNICOS", "PCT_UNICOS",  # unicos vem do Studio pelo robo do Mac (atraso de ~1 dia)
 ]
 
 
@@ -88,6 +89,7 @@ def ler_config():
             "cpl": normalizar_cpl(r.get("CPL", "")),
             "video_id": video_id,
             "leads": leads,
+            "unicos": int(float(r.get("ESPECTADORES_UNICOS", "0") or 0)),
         })
     return ativos
 
@@ -168,6 +170,12 @@ def ler_historico():
 def gravar_snapshots(novas_linhas):
     existe = os.path.exists(ARQUIVO_SNAPSHOTS)
     os.makedirs(os.path.dirname(ARQUIVO_SNAPSHOTS), exist_ok=True)
+    if existe:  # cabecalho ganhou colunas: reescreve so a 1a linha (linhas antigas ficam mais curtas)
+        with open(ARQUIVO_SNAPSHOTS, encoding="utf-8") as f:
+            linhas = f.read().split("\n", 1)
+        if linhas[0].strip() != ",".join(CABECALHO_SNAPSHOTS):
+            with open(ARQUIVO_SNAPSHOTS, "w", encoding="utf-8") as f:
+                f.write(",".join(CABECALHO_SNAPSHOTS) + "\n" + (linhas[1] if len(linhas) > 1 else ""))
     with open(ARQUIVO_SNAPSHOTS, "a", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         if not existe:
@@ -283,6 +291,9 @@ def montar_mensagem(itens, agora):
         pct_txt = "—" if it["pct"] is None else pctfmt(it["pct"])
         msg += (f"\n*{it['lancamento']}* · {rotulo(it['cpl'])} ({it['personagem']})"
                 f"\nhora {it['horas']}: {nfmt(it['views'])} views · *{pct_txt}* dos leads\n")
+        if it.get("unicos") and it.get("leads"):
+            msg += (f"espectadores únicos (Studio, até ontem): {nfmt(it['unicos'])} · "
+                    f"*{pctfmt(it['unicos'] / it['leads'])}* dos leads\n")
 
         comp = it["comp"]
         if not comp:
@@ -344,6 +355,7 @@ def main():
             agora_br.strftime("%Y-%m-%d %H:%M:%S"), cfg["lancamento"], cfg["tag"],
             cfg["cpl"], cfg["video_id"], horas, stats["views"], stats["likes"],
             stats["comments"], "" if pct is None else f"{pct:.6f}",
+            cfg["unicos"] or "", f"{cfg['unicos'] / cfg['leads']:.6f}" if cfg["unicos"] and cfg["leads"] else "",
         ]
         novas_linhas.append(linha)
         # a coleta de agora conta pro fechamento (ex.: esta e a da hora 24)
@@ -354,7 +366,7 @@ def main():
         itens_resumo.append({
             "lancamento": cfg["lancamento"], "personagem": cfg["personagem"],
             "cpl": cfg["cpl"], "horas": horas, "views": stats["views"],
-            "pct": pct, "comp": comp,
+            "pct": pct, "comp": comp, "unicos": cfg["unicos"], "leads": cfg["leads"],
         })
 
     if novas_linhas:
