@@ -44,6 +44,8 @@ ABA_CONFIG = "CONFIG"
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+# usuario-robo do Google (robo-leads-cpl@acompanhamento-cpl.iam.gserviceaccount.com), so leitura
+GOOGLE_SA_JSON = os.environ.get("GOOGLE_SA_JSON", "")
 
 TOLERANCIA = 0.02  # 2% pra cima/baixo conta como "igual"
 FUSO = ZoneInfo("America/Sao_Paulo")
@@ -90,6 +92,7 @@ def ler_config():
             "video_id": video_id,
             "leads": leads,
             "unicos": int(float(r.get("ESPECTADORES_UNICOS", "0") or 0)),
+            "planilha_leads": r.get("PLANILHA_LEADS", ""),
         })
     return ativos
 
@@ -125,6 +128,32 @@ def extrair_video_id(entrada):
         if m:
             return m.group(1)
     return ""
+
+
+def contar_leads_unicos(link):
+    """
+    Leads unicos = linhas preenchidas da aba LEADS UNIQUE da planilha de leads do lancamento
+    (1 e-mail por linha; e o mesmo numero do dashboard da agencia). Precisa do usuario-robo
+    com acesso de leitura a planilha. Devolve None se nao der (ai vale a coluna LEADS).
+    """
+    m = re.search(r"/d/([A-Za-z0-9_-]+)", link or "")
+    if not (m and GOOGLE_SA_JSON):
+        return None
+    from google.auth.transport.requests import Request
+    from google.oauth2 import service_account
+    cred = service_account.Credentials.from_service_account_info(
+        json.loads(GOOGLE_SA_JSON), scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"])
+    cred.refresh(Request())
+    url = (f"https://sheets.googleapis.com/v4/spreadsheets/{m.group(1)}/values/"
+           + urllib.parse.quote("'LEADS UNIQUE'!A2:A"))
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {cred.token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            linhas = json.load(r).get("values", [])
+    except urllib.error.HTTPError as e:
+        print(f"Leads da planilha recusados ({e.code}): compartilhou com o usuario-robo?", file=sys.stderr)
+        return None
+    return sum(1 for l in linhas if l and l[0].strip())
 
 
 # ===================== YOUTUBE =====================
@@ -331,6 +360,16 @@ def main():
     if not ativos:
         print("Nenhum CPL ativo na planilha. Nada a fazer.")
         return
+
+    # leads da planilha da agencia (1 leitura por planilha); sem acesso, vale a coluna LEADS da CONFIG
+    contagens = {}
+    for cfg in ativos:
+        link = cfg["planilha_leads"]
+        if link and link not in contagens:
+            contagens[link] = contar_leads_unicos(link)
+        if contagens.get(link):
+            cfg["leads"] = contagens[link]
+    print(f"Leads unicos da planilha: {contagens or 'coluna PLANILHA_LEADS vazia'}")
 
     regua = ler_regua()
     historico = ler_historico()

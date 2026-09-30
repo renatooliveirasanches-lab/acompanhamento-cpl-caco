@@ -27,12 +27,16 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Instalar o login do Google (usuario-robo dos leads)
+        run: pip install --quiet google-auth requests
+
 
       - name: Rodar o robo
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
         run: python robo.py
 
       - name: Salvar o historico
