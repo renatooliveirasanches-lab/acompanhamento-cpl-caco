@@ -27,6 +27,7 @@ LEADS_CERTOS = {
     "CHAPÉUZINHO": 42192,      # Resultados 2025!AC12
     "FOFUXO": 54195,           # Resultados 2026!D12
     "BIANCA": 60119,           # Resultados 2026!I12 (Princesas)
+    "MORANGUINHO": 67543,      # LC0326, confirmado pelo Renato em 12/10
 }
 
 
