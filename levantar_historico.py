@@ -25,10 +25,16 @@ LEADS_CERTOS = {
     "ANJINHO": 61757,          # Resultados 2024!AC12
     "BRANCA DE NEVE": 61482,   # Resultados 2025!N12
     "CHAPÉUZINHO": 42192,      # Resultados 2025!AC12
-    "FOFUXO": 54195,           # Resultados 2026!D12
+    "COELHO FOFUXO": 54195,    # Resultados 2026!D12 = dashboard [JS]-[FOFUXOS]-[2026-02] (leads unicos)
     "BIANCA": 60119,           # Resultados 2026!I12 (Princesas)
     "MORANGUINHO": 67543,      # LC0326, confirmado pelo Renato em 12/10
+    # Fora da planilha antiga (curva_por_hora.py OFICINAS_FORA_DA_PLANILHA). Dashboard = Resultados 2025, conferido 12/10:
+    "ROBIN": 70317,            # Resultados 2025!D12 = dashboard [JS]-[SP]-[2025-02]
+    "POOH POP": 58036,         # Resultados 2025!S12 = dashboard [JS]-[VP]-[2025-07]
 }
+
+# A planilha antiga chama o Coelho Fofuxo de "FOFUXO · janeiro 2026"; o CPL1 foi em 02/02/2026.
+NOMES_CERTOS = {"FOFUXO": ("fevereiro 2026", "COELHO FOFUXO")}
 
 
 def ler_planilha():
@@ -53,9 +59,15 @@ def n(txt):
     return int(re.sub(r"\D", "", txt or "0") or 0)
 
 
+def nome(linha):
+    """(lancamento, personagem) da linha da planilha antiga, com o nome certo quando a planilha erra."""
+    pers = (linha[8] or "").strip()
+    return NOMES_CERTOS.get(pers.upper(), (linha[0], pers))
+
+
 def leads(linha):
     """LEADS da linha da planilha antiga, trocado pelo numero certo quando a celula esta errada."""
-    return LEADS_CERTOS.get((linha[8] or "").strip().upper(), n(linha[3]))
+    return LEADS_CERTOS.get(nome(linha)[1].upper(), n(linha[3]))
 
 
 def estreia(serie, limiar=100):
@@ -97,7 +109,7 @@ def main():
             continue
         _, dia, views = estreia(serie)
         pct = round(views / leads_linha * 100, 2) if leads_linha else ""
-        w.writerow([cpl_atual, linha[0], linha[8], vid, dia, leads_linha, views, pct,
+        w.writerow([cpl_atual, *nome(linha), vid, dia, leads_linha, views, pct,
                     linha[4], sum(v for _, v in serie)])
 
 

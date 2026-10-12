@@ -204,6 +204,8 @@ def test_leads_da_planilha_antiga_trocados_pelos_certos():
     linha = ["setembro 2024", "OSP AGO24", "link", "60.806", "", "", "", "", "CAPITÃO AMÉRICA "]
     assert lh.leads(linha) == 44565, "personagem com espaco no fim tambem tem que achar a correcao"
     assert lh.leads(["agosto 2024", "", "", "46.273", "", "", "", "", "HARRY POP"]) == 46273
+    fofuxo = ["janeiro 2026", "", "", "54.196", "", "", "", "", "FOFUXO"]
+    assert lh.nome(fofuxo) == ("fevereiro 2026", "COELHO FOFUXO") and lh.leads(fofuxo) == 54195
     cur = robo.ler_curvas()
     assert {int(l[6]) for l in cur if l[1] == "ANJINHO"} == {61757}, "curvas_por_hora.csv sem o numero certo"
 
