@@ -198,6 +198,16 @@ def test_push_do_mac_sobe_commit_parado_e_avisa_quando_falha():
         cph.REPO = original
 
 
+def test_leads_da_planilha_antiga_trocados_pelos_certos():
+    """CPL - ATUALIZADO tem LEADS copiados; a tabela de correcao vence, o resto fica como na planilha."""
+    import levantar_historico as lh
+    linha = ["setembro 2024", "OSP AGO24", "link", "60.806", "", "", "", "", "CAPITÃO AMÉRICA "]
+    assert lh.leads(linha) == 44565, "personagem com espaco no fim tambem tem que achar a correcao"
+    assert lh.leads(["agosto 2024", "", "", "46.273", "", "", "", "", "HARRY POP"]) == 46273
+    cur = robo.ler_curvas()
+    assert {int(l[6]) for l in cur if l[1] == "ANJINHO"} == {61757}, "curvas_por_hora.csv sem o numero certo"
+
+
 if __name__ == "__main__":
     for nome, fn in sorted(globals().items()):
         if nome.startswith("test_"):

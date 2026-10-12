@@ -17,6 +17,18 @@ import youtube_analytics as ya
 PLANILHA = "1NINDFUX7r1a49lW8ZCIaPMpLTYKyaPLEeOB_sepChx8"
 ABA = "CPL - ATUALIZADO"
 
+# A aba CPL - ATUALIZADO tem LEADS copiados de outras linhas. Vale o TOTAL de LEADS da planilha de
+# RESULTADOS 2024/2025/2026 (1T-Vzbco5AaiSWUDHRXVbLNIj70-FCYxGYBeM5CeEQ2I), conferido em 12/10/2026.
+# Detalhe e fonte de cada numero: TESTE CURVA POR HORA/INSCRITOS CORRIGIDOS.md
+LEADS_CERTOS = {
+    "CAPITÃO AMÉRICA": 44565,  # Resultados 2024!X12
+    "ANJINHO": 61757,          # Resultados 2024!AC12
+    "BRANCA DE NEVE": 61482,   # Resultados 2025!N12
+    "CHAPÉUZINHO": 42192,      # Resultados 2025!AC12
+    "FOFUXO": 54195,           # Resultados 2026!D12
+    "BIANCA": 60119,           # Resultados 2026!I12 (Princesas)
+}
+
 
 def ler_planilha():
     saida = subprocess.run(
@@ -38,6 +50,11 @@ def id_do_link(link):
 def n(txt):
     """'21.835' -> 21835"""
     return int(re.sub(r"\D", "", txt or "0") or 0)
+
+
+def leads(linha):
+    """LEADS da linha da planilha antiga, trocado pelo numero certo quando a celula esta errada."""
+    return LEADS_CERTOS.get((linha[8] or "").strip().upper(), n(linha[3]))
 
 
 def estreia(serie, limiar=100):
@@ -67,7 +84,7 @@ def main():
         vid = id_do_link(linha[2])
         if not vid:
             continue
-        leads = n(linha[3])
+        leads_linha = leads(linha)
         try:
             serie = ya.serie_diaria(vid)
         except Exception as e:
@@ -75,11 +92,11 @@ def main():
             continue
         if not serie:
             w.writerow([cpl_atual, linha[0], linha[9], vid, "SEM DADOS",
-                        leads, "", "", linha[4], ""])
+                        leads_linha, "", "", linha[4], ""])
             continue
         _, dia, views = estreia(serie)
-        pct = round(views / leads * 100, 2) if leads else ""
-        w.writerow([cpl_atual, linha[0], linha[8], vid, dia, leads, views, pct,
+        pct = round(views / leads_linha * 100, 2) if leads_linha else ""
+        w.writerow([cpl_atual, linha[0], linha[8], vid, dia, leads_linha, views, pct,
                     linha[4], sum(v for _, v in serie)])
 
 
