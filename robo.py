@@ -295,6 +295,94 @@ def comparar_com_regua(regua, cpl, pct_atual, leads_atual, horas, pct_fechamento
             "pct_veredito": pct_veredito}
 
 
+# ===================== CURVA HORA A HORA (Studio) =====================
+# dados/curvas_por_hora.csv: uma linha por video por hora, com as views do YouTube Studio
+# (os dois lados da comparacao vem do Studio; o contador publico atrasa ate ~29% no dia 1).
+# Os antigos foram puxados 1 vez; o robo do Mac atualiza so o lancamento atual de hora em hora.
+
+ARQUIVO_CURVAS = os.path.join("dados", "curvas_por_hora.csv")
+CABECALHO_CURVAS = ["LANCAMENTO", "PERSONAGEM", "CPL", "VIDEO_ID", "HORA", "VIEWS_ACUMULADAS", "LEADS", "PCT"]
+HORAS_CURVA = 72
+
+
+def linhas_da_curva(lancamento, personagem, cpl, video_id, views_por_hora, leads, ate=HORAS_CURVA):
+    """
+    views_por_hora = o que o Studio devolve (views DENTRO de cada hora, a partir da hora 0).
+    HORA no CSV = horas completas desde a publicacao: HORA 24 = soma das primeiras 24 horas.
+    PCT = acumulado / leads do PROPRIO lancamento (fracao, igual ao PCT_VIEWS dos snapshots).
+    Zeros no fim = horas que o Studio ainda nao fechou: saem (nunca gravar zero de mentira).
+    """
+    v = list(views_por_hora[:ate])
+    while v and v[-1] == 0:
+        v.pop()
+    linhas, total = [], 0
+    for i, x in enumerate(v):
+        total += x
+        linhas.append([lancamento, personagem, cpl, video_id, i + 1, total, leads,
+                       f"{total / leads:.6f}" if leads else ""])
+    return linhas
+
+
+def juntar_curvas(antigas, novas):
+    """
+    Troca no CSV so os videos (LANCAMENTO + CPL) que vieram com dado agora; o resto fica como estava.
+    Video que falhou nao entra em 'novas' -> a curva dele no CSV continua intacta.
+    """
+    trocar = {(str(l[0]), str(l[2])) for l in novas}
+    ficam = [l for l in antigas if (str(l[0]), str(l[2])) not in trocar]
+    return sorted(ficam + novas, key=lambda l: (str(l[0]), str(l[2]), int(l[4])))
+
+
+def ler_curvas(arquivo=ARQUIVO_CURVAS):
+    if not os.path.exists(arquivo):
+        return []
+    with open(arquivo, newline="", encoding="utf-8") as f:
+        return [[r[c] for c in CABECALHO_CURVAS] for r in csv.DictReader(f)]
+
+
+def gravar_curvas(linhas, arquivo=ARQUIVO_CURVAS):
+    with open(arquivo, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(CABECALHO_CURVAS)
+        w.writerows(linhas)
+
+
+def comparar_por_hora(curvas, lancamento, cpl):
+    """
+    CPLn do lancamento atual x CPLn de cada oficina antiga NA MESMA HORA (a ultima com dado do atual).
+    Devolve None se o atual ainda nao tem curva ou nao ha antigo com dado nessa hora.
+    """
+    cpl = str(cpl)
+    meu = [l for l in curvas if l[0] == lancamento and str(l[2]) == cpl and l[7] != ""]
+    if not meu:
+        return None
+    ult = max(meu, key=lambda l: int(l[4]))
+    hora, pct_atual, leads_atual = int(ult[4]), float(ult[7]), int(ult[6] or 0)
+    outros = [{"lancamento": l[0], "personagem": l[1], "leads": int(l[6]), "pct": float(l[7])}
+              for l in curvas
+              if l[0] != lancamento and str(l[2]) == cpl and int(l[4]) == hora and l[7] != ""]
+    if not outros:
+        return None
+    media = sum(o["pct"] for o in outros) / len(outros)
+    return {"hora": hora, "pct": pct_atual, "media": media, "qtd": len(outros),
+            "melhor": max(outros, key=lambda o: o["pct"]), "pior": min(outros, key=lambda o: o["pct"]),
+            "parecido": min(outros, key=lambda o: abs(o["leads"] - leads_atual))}
+
+
+def linha_hora_a_hora(c):
+    """Linha do Telegram. Sem bolinha verde/vermelha antes das 24h: o dia 1 ainda nao fechou."""
+    txt = (f"⏱ hora a hora (Studio), hora {c['hora']}: *{pctfmt(c['pct'])}* · média {pctfmt(c['media'])} "
+           f"({c['qtd']} oficinas) · base parecida {c['parecido']['personagem']} {pctfmt(c['parecido']['pct'])}")
+    if c["hora"] >= 24:
+        if c["pct"] > c["media"] * (1 + TOLERANCIA):
+            txt = "🟢 " + txt
+        elif c["pct"] < c["media"] * (1 - TOLERANCIA):
+            txt = "🔴 " + txt
+        else:
+            txt = "🟡 " + txt
+    return txt + "\n"
+
+
 # ===================== TELEGRAM =====================
 
 def enviar_telegram(texto):
@@ -323,6 +411,8 @@ def montar_mensagem(itens, agora):
         if it.get("unicos") and it.get("leads"):
             msg += (f"espectadores únicos (Studio, até ontem): {nfmt(it['unicos'])} · "
                     f"*{pctfmt(it['unicos'] / it['leads'])}* dos leads\n")
+        if it.get("hora_a_hora"):
+            msg += linha_hora_a_hora(it["hora_a_hora"])
 
         comp = it["comp"]
         if not comp:
@@ -372,6 +462,7 @@ def main():
     print(f"Leads unicos da planilha: {contagens or 'coluna PLANILHA_LEADS vazia'}")
 
     regua = ler_regua()
+    curvas = ler_curvas()
     historico = ler_historico()
     agora = datetime.now(timezone.utc)
     agora_br = agora.astimezone(FUSO)
@@ -406,6 +497,7 @@ def main():
             "lancamento": cfg["lancamento"], "personagem": cfg["personagem"],
             "cpl": cfg["cpl"], "horas": horas, "views": stats["views"],
             "pct": pct, "comp": comp, "unicos": cfg["unicos"], "leads": cfg["leads"],
+            "hora_a_hora": comparar_por_hora(curvas, cfg["lancamento"], cfg["cpl"]),
         })
 
     if novas_linhas:

@@ -65,6 +65,14 @@ th:first-child,td:first-child{text-align:left}
 th{color:var(--texto-2);font-weight:600}
 .nota{color:var(--texto-3);font-size:12px;line-height:1.5}
 .vazio{color:var(--texto-2);padding:24px 0;text-align:center}
+.hora-sel{display:flex;align-items:center;gap:10px;margin:12px 0 4px;font-size:14px;color:var(--texto-2)}
+.hora-sel input{flex:1;accent-color:var(--s2);min-width:0}
+.hora-sel b{color:var(--texto);font-variant-numeric:tabular-nums;min-width:4.5em}
+.resumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:8px 0}
+.resumo div{border:1px solid var(--borda);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--texto-2)}
+.resumo b{display:block;font-size:20px;color:var(--texto);font-variant-numeric:tabular-nums}
+.resumo .atual b{color:var(--s2)}
+tr.atual td{font-weight:650;color:var(--s2)}
 </style>
 </head>
 <body>
@@ -93,6 +101,21 @@ th{color:var(--texto-2);font-weight:600}
     <div class="graf" id="curva"><div class="dica"></div></div>
   </section>
 
+  <section class="cartao" id="cartao-hora">
+    <div class="topo-graf">
+      <div>
+        <h2>Hora a hora × oficinas anteriores</h2>
+        <p class="sub">% dos inscritos de cada lançamento, contando da publicação · YouTube Studio dos dois lados</p>
+      </div>
+      <div class="abas" id="abas-hora"></div>
+    </div>
+    <div class="legenda"><span><i style="background:var(--s2);height:4px"></i>este lançamento</span><span><i style="background:var(--texto-3)"></i>oficinas anteriores</span></div>
+    <div class="graf" id="curva-hora"><div class="dica"></div></div>
+    <label class="hora-sel">Na hora <b id="hora-n"></b><input type="range" id="hora" min="1" max="72" aria-label="hora desde a publicação"></label>
+    <div class="resumo" id="resumo-hora"></div>
+    <div class="tabela" id="tabela-hora"></div>
+  </section>
+
   <section class="cartao">
     <div class="topo-graf">
       <div>
@@ -115,6 +138,7 @@ th{color:var(--texto-2);font-weight:600}
     Ao vivo = contador público do YouTube, a cada hora; nas primeiras horas ele fica abaixo do Studio e converge depois.
     Espectadores únicos = YouTube Studio, lido pelo robô do Mac 1x por hora (o Studio fecha esse número com ~1 dia de atraso). A régua usa o YouTube Analytics (dia da estreia ≈ 97% do "Primeiras 24 horas" do Studio).
     O % ao vivo usa os leads da planilha no momento da coleta: com a captação aberta, atualize os LEADS 1x por dia.
+    Hora a hora: views do YouTube Studio desde a publicação (robô do Mac, de hora em hora; o Studio fica 2–3 horas atrás do relógio e a última hora só entra quando fecha). Cada curva ÷ inscritos do próprio lançamento.
     A página se atualiza sozinha a cada 10 minutos.
   </p>
 </main>
@@ -141,7 +165,7 @@ function csv(texto) {
   });
 }
 
-let SNAP = [], REGUA = [], estado = { lanc: null, cpl: "1", tipo: "CPL" };
+let SNAP = [], REGUA = [], CURVAS = [], estado = { lanc: null, cpl: "1", tipo: "CPL", horaN: null };
 
 async function carregar() {
   const t = "?t=" + Date.now();
@@ -149,6 +173,10 @@ async function carregar() {
     fetch("dados/snapshots.csv" + t).then(x => x.text()),
     fetch("dados/regua.csv" + t).then(x => x.text()),
   ]);
+  // curva hora a hora (Studio): se o arquivo ainda nao existir, o painel segue sem ela
+  const c = await fetch("dados/curvas_por_hora.csv" + t).then(x => x.ok ? x.text() : "").catch(() => "");
+  CURVAS = c ? csv(c).map(l => ({ lanc: l.LANCAMENTO, pers: l.PERSONAGEM, cpl: l.CPL, h: +l.HORA,
+    views: +l.VIEWS_ACUMULADAS, leads: +l.LEADS, pct: l.PCT === "" ? null : +l.PCT })).filter(l => l.pct !== null) : [];
   SNAP = csv(s).map(l => ({
     ts: l.TIMESTAMP, lanc: l.LANCAMENTO, tag: l.TAG, cpl: l.CPL,
     h: +l.HORA_DESDE_PUBLICACAO, views: +l.VIEWS, pct: l.PCT_VIEWS === "" ? null : +l.PCT_VIEWS,
@@ -254,6 +282,7 @@ function desenhar() {
     const c = document.getElementById("regua"), W = Math.max(c.clientWidth, 300);
     svgEl(c, W, 80).innerHTML = `<text x="${W / 2}" y="44" text-anchor="middle">régua dos aquecimentos ainda não montada</text>`;
   }
+  horaAHora(lanc);
 
   // ----- tabela -----
   document.getElementById("tabela").innerHTML = `<table><thead><tr><th>Coleta</th><th>Vídeo</th><th>Hora</th><th>Views</th><th>% dos leads</th><th>Únicos</th><th>% únicos</th></tr></thead><tbody>${
@@ -359,6 +388,82 @@ function regua(lanc, serieAtual) {
     };
     el.onpointerleave = () => dica.style.display = "none";
   });
+}
+
+// ----- hora a hora: CPLn atual x CPLn de cada oficina antiga, na mesma hora desde a publicacao -----
+function horaAHora(lanc) {
+  const cartao = document.getElementById("cartao-hora");
+  cartao.hidden = estado.tipo !== "CPL" || !CURVAS.length;
+  if (cartao.hidden) return;
+  const cpls = [...new Set(CURVAS.map(c => c.cpl))].sort(porNumero);
+  if (!cpls.includes(estado.cpl)) estado.cpl = cpls[0];
+  document.getElementById("abas-hora").innerHTML = cpls.map(c =>
+    `<button aria-pressed="${c === estado.cpl}" data-cpl="${c}">${rotulo(c)}</button>`).join("");
+  document.querySelectorAll("#abas-hora button").forEach(b => b.onclick = () => { estado.cpl = b.dataset.cpl; estado.horaN = null; desenhar(); });
+
+  const doCpl = CURVAS.filter(c => c.cpl === estado.cpl);
+  const grupos = {};
+  for (const c of doCpl) (grupos[c.lanc] ||= { lanc: c.lanc, pers: c.pers, leads: c.leads, pts: [] }).pts.push(c);
+  Object.values(grupos).forEach(g => g.pts.sort((a, b) => a.h - b.h));
+  const atual = grupos[lanc] || null;
+  const antigos = Object.values(grupos).filter(g => g !== atual);
+  const ultH = atual ? atual.pts[atual.pts.length - 1].h : 24;
+  const N = Math.min(estado.horaN ?? ultH, 72);
+  const naHora = g => g.pts.find(p => p.h === N) || null;
+
+  // ----- gráfico -----
+  const caixa = document.getElementById("curva-hora"), dica = caixa.querySelector(".dica");
+  const W = Math.max(caixa.clientWidth, 300), H = W < 560 ? 240 : 300, m = { t: 12, r: 12, b: 30, l: 44 };
+  const yMax = Math.max(...doCpl.map(c => c.pct)) * 1.05;
+  const X = h => m.l + (h / 72) * (W - m.l - m.r), Y = p => H - m.b - (p / yMax) * (H - m.t - m.b);
+  const pY = passo(yMax);
+  let g = "";
+  for (let v = 0; v <= yMax; v += pY) g += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="${cor("--grade")}"/><text x="${m.l - 6}" y="${Y(v) + 4}" text-anchor="end">${Math.round(v * 100)}%</text>`;
+  for (let h = 0; h <= 72; h += (W < 560 ? 24 : 12)) g += `<text x="${X(h)}" y="${H - 10}" text-anchor="middle">${h}h</text>`;
+  const linha = (gr, k, w, op) => `<polyline fill="none" stroke="${k}" stroke-width="${w}" stroke-opacity="${op}" stroke-linejoin="round" stroke-linecap="round" points="${X(0)},${Y(0)} ${gr.pts.map(p => `${X(p.h)},${Y(p.pct)}`).join(" ")}"/>`;
+  for (const a of antigos) g += linha(a, cor("--texto-3"), 1.5, 0.55);
+  if (atual) {
+    const f = atual.pts[atual.pts.length - 1];
+    g += linha(atual, cor("--s2"), 3, 1);
+    g += `<circle cx="${X(f.h)}" cy="${Y(f.pct)}" r="4.5" fill="${cor("--s2")}" stroke="${cor("--surface")}" stroke-width="2"/>`;
+    g += `<text x="${X(f.h) + 8}" y="${Y(f.pct) - 8}" style="fill:${cor("--texto")};font-weight:650">${pct(f.pct)}</text>`;
+  }
+  g += `<line x1="${X(N)}" x2="${X(N)}" y1="${m.t}" y2="${H - m.b}" stroke="${cor("--texto")}" stroke-dasharray="3 3"/>`;
+  g += `<rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" id="alvo-hora"/>`;
+  svgEl(caixa, W, H).innerHTML = g;
+  dica.style.display = "none";
+  // tocar/passar o dedo no gráfico escolhe a hora
+  const alvo = caixa.querySelector("#alvo-hora");
+  alvo.onpointerdown = alvo.onpointermove = ev => {
+    const r = caixa.querySelector("svg").getBoundingClientRect();
+    const h = Math.round((((ev.clientX - r.left) * W / r.width) - m.l) / (W - m.l - m.r) * 72);
+    const nh = Math.max(1, Math.min(72, h));
+    if (nh !== N) { estado.horaN = nh; horaAHora(lanc); }
+  };
+
+  // ----- seletor + resumo + tabela -----
+  const sl = document.getElementById("hora");
+  sl.value = N; sl.oninput = () => { estado.horaN = +sl.value; horaAHora(lanc); };
+  document.getElementById("hora-n").textContent = N + "h";
+  const comDado = antigos.map(a => ({ ...a, p: naHora(a) })).filter(a => a.p);
+  const pa = atual && naHora(atual);
+  const res = document.getElementById("resumo-hora");
+  if (!comDado.length) { res.innerHTML = `<p class="vazio">Nenhuma oficina anterior com dado na hora ${N}.</p>`; document.getElementById("tabela-hora").innerHTML = ""; return; }
+  const media = comDado.reduce((s, a) => s + a.p.pct, 0) / comDado.length;
+  const melhor = comDado.reduce((a, b) => b.p.pct > a.p.pct ? b : a);
+  const pior = comDado.reduce((a, b) => b.p.pct < a.p.pct ? b : a);
+  const parecido = atual ? comDado.reduce((a, b) => Math.abs(b.leads - atual.leads) < Math.abs(a.leads - atual.leads) ? b : a) : null;
+  const caixinha = (rot, val, det, cls = "") => `<div class="${cls}">${rot}<b>${val}</b>${det}</div>`;
+  res.innerHTML =
+    caixinha(`atual · ${lanc}`, pa ? pct(pa.pct) : "—", pa ? `${num(pa.views)} views` : atual ? `ainda não chegou na hora ${N}` : "sem curva deste lançamento", "atual") +
+    caixinha(`média · ${comDado.length} oficinas`, pct(media), pa ? pts(pa.pct - media) : "") +
+    caixinha(`melhor · ${melhor.pers}`, pct(melhor.p.pct), melhor.lanc) +
+    caixinha(`pior · ${pior.pers}`, pct(pior.p.pct), pior.lanc) +
+    (parecido ? caixinha(`mais parecido em leads · ${parecido.pers}`, pct(parecido.p.pct), `${num(parecido.leads)} inscritos`) : "");
+  const linhas = [...comDado, ...(pa ? [{ ...atual, p: pa, eu: true }] : [])].sort((a, b) => b.p.pct - a.p.pct);
+  document.getElementById("tabela-hora").innerHTML = `<table><thead><tr><th>Oficina na hora ${N}</th><th>% dos inscritos</th><th>Views</th><th>Inscritos</th></tr></thead><tbody>${
+    linhas.map(l => `<tr class="${l.eu ? "atual" : ""}"><td>${l.eu ? "▶ " : ""}${l.pers} · ${l.lanc}</td><td>${pct(l.p.pct)}</td><td>${num(l.p.views)}</td><td>${num(l.leads)}</td></tr>`).join("")
+  }</tbody></table>`;
 }
 
 document.getElementById("lanc").onchange = e => { estado.lanc = e.target.value; desenhar(); };

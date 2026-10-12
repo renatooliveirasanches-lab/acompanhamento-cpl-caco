@@ -100,14 +100,6 @@ def test_mensagem_sai_inteira():
     print(msg)
 
 
-if __name__ == "__main__":
-    for nome, fn in sorted(globals().items()):
-        if nome.startswith("test_"):
-            fn()
-            print(f"ok  {nome}")
-    print("\nTudo passou.")
-
-
 def test_aquecimento_tem_nome_proprio_e_nao_mistura_com_cpl():
     assert robo.normalizar_cpl("Aquecimento 2") == "AQ2"
     assert robo.normalizar_cpl("a2") == "AQ2"
@@ -145,3 +137,42 @@ def test_cabecalho_antigo_ganha_colunas_novas(tmp=None):
     linhas = open(arq).read().splitlines()
     assert linhas[0] == ",".join(robo.CABECALHO_SNAPSHOTS)
     assert linhas[1] == "x,y" and len(linhas) == 3
+
+
+def test_curva_por_hora_pct_e_juncao_atual_x_antigos():
+    """
+    % da curva = acumulado / leads do PROPRIO lancamento; HORA 2 = soma das 2 primeiras horas.
+    A comparacao e CPLn x CPLn na MESMA hora; atualizar o atual nao mexe nos antigos;
+    video que falhou (sem linhas novas) nao apaga a curva que ja estava gravada.
+    """
+    l = robo.linhas_da_curva("LC0526", "Emilia", "1", "x", [2000, 1000, 0, 0], 10000)
+    assert [(r[4], r[5], r[7]) for r in l] == [(1, 2000, "0.200000"), (2, 3000, "0.300000")], l  # zeros do fim saem
+    assert robo.linhas_da_curva("LC0526", "Emilia", "1", "x", [5] * 100, 10)[-1][4] == 72  # corta em 72h
+
+    antigos = (robo.linhas_da_curva("nov 2024", "ANJINHO", "1", "a", [4000, 4000], 20000)      # 40% na hora 2
+               + robo.linhas_da_curva("jun 2026", "MORANGUINHO", "1", "m", [1000, 1000], 10000)  # 20% na hora 2
+               + robo.linhas_da_curva("jun 2026", "MORANGUINHO", "2", "m2", [9000, 9000], 10000))  # CPL2: fica fora
+    csv_ = robo.juntar_curvas(antigos, l)
+    c = robo.comparar_por_hora(csv_, "LC0526", "1")
+    assert c["hora"] == 2 and abs(c["pct"] - 0.30) < 1e-9 and c["qtd"] == 2
+    assert abs(c["media"] - 0.30) < 1e-9, "media de 40% e 20%, sem o CPL2"
+    assert c["melhor"]["personagem"] == "ANJINHO" and c["pior"]["personagem"] == "MORANGUINHO"
+    assert c["parecido"]["personagem"] == "MORANGUINHO", "10.000 leads e o mais perto de 10.000"
+
+    # nova hora do atual: troca so as linhas dele
+    novo = robo.linhas_da_curva("LC0526", "Emilia", "1", "x", [2000, 1000, 500], 10000)
+    csv2 = robo.juntar_curvas(csv_, novo)
+    assert len(csv2) == len(antigos) + 3 and [r for r in csv2 if r[0] != "LC0526"] == sorted(antigos, key=lambda r: (r[0], r[2], r[4]))
+    # falha (nenhuma linha nova) nao apaga nada
+    assert robo.juntar_curvas(csv2, []) == csv2
+    # hora 3: nenhum antigo tem -> sem comparacao (nunca inventar)
+    assert robo.comparar_por_hora(csv2, "LC0526", "1") is None
+    assert "🟢" not in robo.linha_hora_a_hora(c), "antes das 24h nao tem bolinha"
+
+
+if __name__ == "__main__":
+    for nome, fn in sorted(globals().items()):
+        if nome.startswith("test_"):
+            fn()
+            print(f"ok  {nome}")
+    print("\nTudo passou.")
