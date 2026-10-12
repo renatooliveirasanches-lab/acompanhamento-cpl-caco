@@ -169,6 +169,34 @@ def test_curva_por_hora_pct_e_juncao_atual_x_antigos():
     assert robo.comparar_por_hora(csv2, "LC0526", "1") is None
     assert "🟢" not in robo.linha_hora_a_hora(c), "antes das 24h nao tem bolinha"
 
+    assert "Studio (fechado até a hora 2)" in robo.linha_hora_a_hora(c)
+
+
+def test_push_do_mac_sobe_commit_parado_e_avisa_quando_falha():
+    """Repositorio de mentira (nada vai pro GitHub): commit parado sobe; sem remoto, sai com erro."""
+    import os, subprocess, sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ROBO-MAC"))
+    import curva_por_hora as cph
+    pasta = tempfile.mkdtemp()
+    sh = lambda *c: subprocess.run(c, cwd=pasta, capture_output=True, check=True)
+    sh("git", "init", "-q", "--bare", "remoto.git")
+    sh("git", "clone", "-q", "remoto.git", "copia")
+    original = cph.REPO
+    cph.REPO = os.path.join(pasta, "copia")
+    try:
+        for c in (["config", "user.email", "t@t"], ["config", "user.name", "t"], ["commit", "-q", "--allow-empty", "-m", "x"]):
+            assert cph.git(*c).returncode == 0
+        cph.git("push", "-q", "-u", "origin", "HEAD")
+        assert not cph.commits_parados()
+        cph.git("commit", "-q", "--allow-empty", "-m", "parado")
+        assert cph.commits_parados(), "commit novo tem que contar como parado"
+        assert cph.publicar() and not cph.commits_parados()
+        cph.git("commit", "-q", "--allow-empty", "-m", "sem remoto")
+        cph.git("remote", "set-url", "origin", os.path.join(pasta, "nao-existe.git"))
+        assert cph.publicar() is False, "push que falha tem que devolver False (saida 1 no log)"
+    finally:
+        cph.REPO = original
+
 
 if __name__ == "__main__":
     for nome, fn in sorted(globals().items()):

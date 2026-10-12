@@ -48,7 +48,9 @@ jobs:
             echo "Nada novo pra salvar."
           else
             git commit -m "Coleta automatica $(date -u +'%Y-%m-%d %H:%M UTC')"
-            git push
+            # o robo do Mac tambem da push (curvas_por_hora.csv): arquivos diferentes, o rebase entra sem conflito
+            for i in 1 2 3; do git pull --rebase -q && git push && exit 0; sleep 5; done
+            exit 1
           fi
 
       - name: Manter o robo ligado

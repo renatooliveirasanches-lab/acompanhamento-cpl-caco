@@ -406,7 +406,11 @@ function horaAHora(lanc) {
   for (const c of doCpl) (grupos[c.lanc] ||= { lanc: c.lanc, pers: c.pers, leads: c.leads, pts: [] }).pts.push(c);
   Object.values(grupos).forEach(g => g.pts.sort((a, b) => a.h - b.h));
   const atual = grupos[lanc] || null;
-  const antigos = Object.values(grupos).filter(g => g !== atual);
+  // so conta como antiga a oficina que veio ANTES da escolhida: as da planilha antiga sao todas anteriores
+  // aos snapshots; entre as que tem snapshot, vale a data da 1a coleta. Curva incompleta (<72h) nunca e antiga.
+  const primeiro = l => SNAP.filter(s => s.lanc === l).map(s => s.ts).sort()[0] || "";
+  const antes = l => !primeiro(l) || (primeiro(lanc) && primeiro(l) < primeiro(lanc));
+  const antigos = Object.values(grupos).filter(g => g !== atual && antes(g.lanc) && g.pts[g.pts.length - 1].h >= 72);
   const ultH = atual ? atual.pts[atual.pts.length - 1].h : 24;
   const N = Math.min(estado.horaN ?? ultH, 72);
   const naHora = g => g.pts.find(p => p.h === N) || null;

@@ -371,7 +371,7 @@ def comparar_por_hora(curvas, lancamento, cpl):
 
 def linha_hora_a_hora(c):
     """Linha do Telegram. Sem bolinha verde/vermelha antes das 24h: o dia 1 ainda nao fechou."""
-    txt = (f"⏱ hora a hora (Studio), hora {c['hora']}: *{pctfmt(c['pct'])}* · média {pctfmt(c['media'])} "
+    txt = (f"⏱ Studio (fechado até a hora {c['hora']}): *{pctfmt(c['pct'])}* · média {pctfmt(c['media'])} "
            f"({c['qtd']} oficinas) · base parecida {c['parecido']['personagem']} {pctfmt(c['parecido']['pct'])}")
     if c["hora"] >= 24:
         if c["pct"] > c["media"] * (1 + TOLERANCIA):
