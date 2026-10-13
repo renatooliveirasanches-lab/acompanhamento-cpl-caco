@@ -64,7 +64,7 @@ def test_curva_por_hora_pct_e_juncao_atual_x_antigos():
                + robo.linhas_da_curva("jun 2026", "MORANGUINHO", "1", "m", [1000, 1000], 10000)  # 20% na hora 2
                + robo.linhas_da_curva("jun 2026", "MORANGUINHO", "2", "m2", [9000, 9000], 10000))  # CPL2: fica fora
     csv_ = robo.juntar_curvas(antigos, l)
-    assert robo.linha_vizinhos(csv_, "LC0526", "1") == "✅ CPL 1: acima da Moranguinho, abaixo do Anjinho", \
+    assert robo.linha_vizinhos(csv_, "LC0526", "1") == "✅ Acima da Moranguinho, abaixo do Anjinho", \
         "30% na hora 2: entre 40% e 20%, sem o CPL2"
 
     # nova hora do atual: troca so as linhas dele
@@ -154,26 +154,42 @@ def test_mensagem_nova_formato_aprovado():
     ]
     msg = robo.montar_mensagem("LC0526", ativos, hist, curvas, datetime.datetime(2026, 10, 13, 17, 6))
     print(msg)
-    linhas = msg.splitlines()
     assert "99" not in msg and "LC0426" not in msg, "outro lancamento nao entra"
-    assert linhas[2] == "🔥 Aquecimentos: Porquinho 1: 94,6 mil · Tiara: 12,3 mil", \
-        "ordem de publicacao (AQ1 saiu antes do AQ0), pelo nome, contador mais recente"
-    assert linhas[3] == "🎬 CPL 1: 38,3 mil (60%) · CPL 2: 11,8 mil (19%)"
-    assert "✅ CPL 1" not in msg, "CPL1 na hora 3 nao tem oficina antiga: fica de fora (nunca inventar)"
-    assert "✅ CPL 2: acima do Chapéuzinho, abaixo da Bianca" in linhas
-    assert "📍 Média dos CPLs: 2º de 4 lançamentos" in linhas
-    assert "📉 Queda do 1 pro 2: −30% (a menor de todas 👏)" in linhas
-    assert linhas[-1] == "👤 Únicos: CPL 1 24 mil · CPL 2 amanhã"
+    assert msg == (
+        "📊 <b>LC0526 · 13/10 17h</b>\n\n"
+        "🔥 <b>AQ</b>\nPorquinho 1: 94,6 mil\nTiara: 12,3 mil\n\n"   # ordem de publicacao, nome, contador mais recente
+        "🎬 <b>CPL 1</b>\n38,3 mil views (60% dos inscritos)\n👤 Únicos: 24 mil\n\n"  # hora 3 sem antigo: sem ✅
+        "🎬 <b>CPL 2</b>\n11,8 mil views (19% dos inscritos)\n✅ Acima do Chapéuzinho, abaixo da Bianca\n"
+        "👤 Únicos: amanhã\n\n"
+        "📍 <b>Média dos CPLs:</b> 2º de 4 lançamentos\n"
+        "📉 <b>Queda do 1 pro 2:</b> −30% (a menor de todas 👏)\n"), msg
 
     # queda que nao e extrema mostra a media das outras: Bianca -33% x -30, -50, -67
-    assert robo.linhas_media_e_queda(curvas, "mar 2026", ["1", "2"])[1] == "📉 Queda do 1 pro 2: −33% (média −49%)"
+    assert robo.linhas_media_e_queda(curvas, "mar 2026", ["1", "2"])[1] == "📉 <b>Queda do 1 pro 2:</b> −33% (média −49%)"
     # lanterna e primeiro
-    assert robo.linha_vizinhos(curvas, "fev 2026", "2") == "⚠️ CPL 2: último, abaixo do Chapéuzinho"
-    assert robo.linha_vizinhos(curvas, "mar 2026", "1") == "✅ CPL 1: acima de todos"
+    assert robo.linha_vizinhos(curvas, "fev 2026", "2") == "⚠️ Último, abaixo do Chapéuzinho"
+    assert robo.linha_vizinhos(curvas, "mar 2026", "1") == "✅ Acima de todos"
     # so CPL1 e nada de curva: sem linhas de analise inventadas
     so1 = robo.montar_mensagem("LC0526", ativos[:4], hist, [], datetime.datetime(2026, 10, 13, 17, 6))
-    assert "✅" not in so1 and "📍" not in so1 and "📉" not in so1 and "👤 Únicos: CPL 1 24 mil" in so1
+    assert "✅" not in so1 and "📍" not in so1 and "📉" not in so1 and "👤 Únicos: 24 mil" in so1
 
+    # oficina antiga com 0% no CPL1: nao derruba a rodada; so sai da conta da queda (media continua)
+    zero = curvas + robo.linhas_da_curva("jan 2025", "ROBIN", "2", "x", [500, 500], 10000) \
+        + [["jan 2025", "ROBIN", "1", "x", 2, 0, 10000, "0.000000"]]
+    mq = robo.linhas_media_e_queda(zero, "LC0526", ["1", "2"])
+    assert mq == ["📍 <b>Média dos CPLs:</b> 2º de 5 lançamentos", "📉 <b>Queda do 1 pro 2:</b> −30% (a menor de todas 👏)"], mq
+    # o proprio lancamento com 0% no CPL1: sem linha de queda, sem erro
+    assert len(robo.linhas_media_e_queda(zero, "jan 2025", ["1", "2"])) == 1
+
+
+def test_nomes_com_simbolos_nao_quebram_o_html():
+    """Telegram em HTML: & < > no nome viram &amp; &lt; &gt;; '_' passa direto (era o que derrubava o Markdown)."""
+    import datetime
+    ativos = [{"lancamento": "LC0526", "cpl": "AQ1", "personagem": "Tom_&_Jerry <2>", "unicos": 0}]
+    hist = [{"LANCAMENTO": "LC0526", "CPL": "AQ1", "VIEWS": "1500", "HORA_DESDE_PUBLICACAO": "5"}]
+    msg = robo.montar_mensagem("LC0526", ativos, hist, [], datetime.datetime(2026, 10, 13, 17, 6))
+    assert "Tom_&amp;_Jerry &lt;2&gt;: 1,5 mil" in msg, msg
+    assert robo.com_artigo("A & B") == "do A &amp; B"
 
 if __name__ == "__main__":
     for nome, fn in sorted(globals().items()):

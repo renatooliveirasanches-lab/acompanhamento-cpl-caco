@@ -11,6 +11,7 @@ O Renato so mexe na planilha (aba CONFIG). O resto e automatico.
 """
 
 import csv
+import html
 import io
 import json
 import os
@@ -287,7 +288,8 @@ def enviar_telegram(texto):
         print("Telegram nao configurado.", file=sys.stderr)
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    _post(url, {"chat_id": TELEGRAM_CHAT_ID, "text": texto})
+    # HTML (<b>) e nao Markdown: '_' num nome derrubava o envio; em HTML so & < > precisam de escape
+    _post(url, {"chat_id": TELEGRAM_CHAT_ID, "text": texto, "parse_mode": "HTML"})
 
 
 def mil(n):
@@ -309,7 +311,7 @@ def com_artigo(personagem):
     """'BIANCA' -> 'da Bianca' · 'COELHO FOFUXO' -> 'do Coelho Fofuxo'."""
     p = personagem.strip().upper()
     nome = p.title().replace(" De ", " de ").replace("Auau", "AUAU")
-    return ("da " if p in FEMININAS else "do ") + nome
+    return ("da " if p in FEMININAS else "do ") + html.escape(nome, quote=False)
 
 
 def pct_na_hora(curvas, cpl, hora):
@@ -335,11 +337,11 @@ def linha_vizinhos(curvas, lancamento, cpl):
     ordem = sorted(todos, key=lambda k: -todos[k][1])
     i = ordem.index(lancamento)
     if i == 0:
-        return f"✅ CPL {cpl}: acima de todos"
+        return "✅ Acima de todos"
     acima = com_artigo(todos[ordem[i - 1]][0])
     if i == len(ordem) - 1:
-        return f"⚠️ CPL {cpl}: último, abaixo {acima}"
-    return f"✅ CPL {cpl}: acima {com_artigo(todos[ordem[i + 1]][0])}, abaixo {acima}"
+        return f"⚠️ Último, abaixo {acima}"
+    return f"✅ Acima {com_artigo(todos[ordem[i + 1]][0])}, abaixo {acima}"
 
 
 def linhas_media_e_queda(curvas, lancamento, cpls):
@@ -356,18 +358,20 @@ def linhas_media_e_queda(curvas, lancamento, cpls):
         return []
     media = {k: sum(p[k][1] for p in por_cpl) / len(cpls) for k in comuns}
     pos = 1 + sum(1 for k in comuns if media[k] > media[lancamento])
-    linhas = [f"📍 Média dos CPLs: {pos}º de {len(comuns)} lançamentos"]
-    if len(cpls) >= 2:
-        queda = {k: por_cpl[-1][k][1] / por_cpl[-2][k][1] - 1 for k in comuns}
+    linhas = [f"📍 <b>Média dos CPLs:</b> {pos}º de {len(comuns)} lançamentos"]
+    # oficina com 0% no CPL anterior nao tem queda (dividiria por zero): fica fora so dessa conta
+    queda = {k: por_cpl[-1][k][1] / por_cpl[-2][k][1] - 1 for k in comuns if por_cpl[-2][k][1] > 0} \
+        if len(cpls) >= 2 else {}
+    outras = [queda[k] for k in queda if k != lancamento]
+    if lancamento in queda and outras:
         q = queda[lancamento]
-        outras = [queda[k] for k in comuns if k != lancamento]
         if q > max(outras):
             fim = "(a menor de todas 👏)"
         elif q < min(outras):
             fim = "(a maior de todas ⚠️)"
         else:
             fim = f"(média {variacao(sum(outras) / len(outras))})"
-        linhas.append(f"📉 Queda do {cpls[-2]} pro {cpls[-1]}: {variacao(q)} {fim}")
+        linhas.append(f"📉 <b>Queda do {cpls[-2]} pro {cpls[-1]}:</b> {variacao(q)} {fim}")
     return linhas
 
 
@@ -387,20 +391,22 @@ def montar_mensagem(lancamento, ativos, historico, curvas, agora):
     cpls = sorted((c for c in meus if c["cpl"].isdigit()), key=lambda c: int(c["cpl"]))
     cpls = [c for c in cpls if views(c)]
 
-    msg = f"📊 {lancamento} · {agora.strftime('%d/%m %H')}h\n\n"
+    e = lambda t: html.escape(str(t), quote=False)  # nome da CONFIG pode ter & < >
+    blocos = [f"📊 <b>{e(lancamento)} · {agora.strftime('%d/%m %H')}h</b>"]
     if aqs:
-        msg += "🔥 Aquecimentos: " + " · ".join(f"{c['personagem']}: {mil(views(c)['VIEWS'])}" for c in aqs) + "\n"
-    if cpls:
-        msg += "🎬 " + " · ".join(
-            f"CPL {c['cpl']}: {mil(views(c)['VIEWS'])}"
-            + (f" ({float(views(c)['PCT_VIEWS']) * 100:.0f}%)" if views(c).get("PCT_VIEWS") else "")
-            for c in cpls) + "\n"
-
-        analise = [l for c in cpls if (l := linha_vizinhos(curvas, lancamento, c["cpl"]))]
-        analise += linhas_media_e_queda(curvas, lancamento, [c["cpl"] for c in cpls])
-        analise.append("👤 Únicos: " + " · ".join(
-            f"CPL {c['cpl']} {mil(c['unicos']) if c['unicos'] else 'amanhã'}" for c in cpls))
-        msg += "\n" + "\n".join(analise) + "\n"
+        blocos.append("🔥 <b>AQ</b>\n" + "\n".join(f"{e(c['personagem'])}: {mil(views(c)['VIEWS'])}" for c in aqs))
+    for c in cpls:
+        v = views(c)
+        b = f"🎬 <b>CPL {e(c['cpl'])}</b>\n{mil(v['VIEWS'])} views"
+        if v.get("PCT_VIEWS"):
+            b += f" ({float(v['PCT_VIEWS']) * 100:.0f}% dos inscritos)"
+        if l := linha_vizinhos(curvas, lancamento, c["cpl"]):
+            b += "\n" + l
+        b += "\n👤 Únicos: " + (mil(c["unicos"]) if c["unicos"] else "amanhã")
+        blocos.append(b)
+    if cpls and (fim := linhas_media_e_queda(curvas, lancamento, [c["cpl"] for c in cpls])):
+        blocos.append("\n".join(fim))
+    msg = "\n\n".join(blocos) + "\n"
     return msg
 
 
