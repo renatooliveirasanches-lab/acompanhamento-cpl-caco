@@ -210,6 +210,15 @@ def test_leads_da_planilha_antiga_trocados_pelos_certos():
     assert {int(l[6]) for l in cur if l[1] == "ANJINHO"} == {61757}, "curvas_por_hora.csv sem o numero certo"
 
 
+def test_captacao_fechada_usa_base_fixa():
+    """LC0526 fechou em 63.271: a contagem da agencia (63.325) e a coluna LEADS nao mandam mais."""
+    fechado = {"lancamento": "LC0526", "leads": 0}
+    assert robo.base_de_leads(fechado, 63325) == 63271
+    assert robo.base_de_leads(fechado, None) == 63271
+    aberto = {"lancamento": "LC0626", "leads": 50000}
+    assert robo.base_de_leads(aberto, 51234) == 51234, "captacao aberta: vale a planilha da agencia"
+    assert robo.base_de_leads(aberto, None) == 50000, "sem planilha: vale a coluna LEADS"
+
 if __name__ == "__main__":
     for nome, fn in sorted(globals().items()):
         if nome.startswith("test_"):

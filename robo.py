@@ -47,6 +47,11 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 # usuario-robo do Google (robo-leads-cpl@acompanhamento-cpl.iam.gserviceaccount.com), so leitura
 GOOGLE_SA_JSON = os.environ.get("GOOGLE_SA_JSON", "")
 
+# Inscritos FINAIS de lancamento com a captacao fechada: valem mais que a contagem da planilha da agencia
+# (que segue mexendo depois de fechar) e que a coluna LEADS. Nuvem e robo do Mac usam a mesma tabela.
+# ponytail: numero fixo por lancamento; no proximo, ou poe aqui ou preenche LEADS na CONFIG.
+LEADS_FECHADOS = {"LC0526": 63271}
+
 TOLERANCIA = 0.02  # 2% pra cima/baixo conta como "igual"
 FUSO = ZoneInfo("America/Sao_Paulo")
 ARQUIVO_SNAPSHOTS = os.path.join("dados", "snapshots.csv")
@@ -128,6 +133,11 @@ def extrair_video_id(entrada):
         if m:
             return m.group(1)
     return ""
+
+
+def base_de_leads(cfg, contagem):
+    """Captacao fechada -> numero fixo · senao a contagem da planilha da agencia · senao a coluna LEADS."""
+    return LEADS_FECHADOS.get(cfg["lancamento"]) or contagem or cfg["leads"]
 
 
 def contar_leads_unicos(link):
@@ -455,10 +465,9 @@ def main():
     contagens = {}
     for cfg in ativos:
         link = cfg["planilha_leads"]
-        if link and link not in contagens:
+        if cfg["lancamento"] not in LEADS_FECHADOS and link and link not in contagens:
             contagens[link] = contar_leads_unicos(link)
-        if contagens.get(link):
-            cfg["leads"] = contagens[link]
+        cfg["leads"] = base_de_leads(cfg, contagens.get(link))
     print(f"Leads unicos da planilha: {contagens or 'coluna PLANILHA_LEADS vazia'}")
 
     regua = ler_regua()
