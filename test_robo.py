@@ -3,101 +3,12 @@
 import tempfile
 import robo
 
-REGUA = {
-    "1": [
-        {"lancamento": "novembro 2024", "personagem": "ANJINHO", "leads": 41924, "pct": 1.0714},
-        {"lancamento": "junho 2026", "personagem": "MORANGUINHO", "leads": 65826, "pct": 0.583},
-        {"lancamento": "janeiro 2026", "personagem": "FOFUXO", "leads": 54196, "pct": 0.450},
-    ],
-    "2": [{"lancamento": "julho 2024", "personagem": "SUPER ALPHA", "leads": 21835, "pct": 0.503}],
-}
-MEDIA_CPL1 = (1.0714 + 0.583 + 0.450) / 3  # 0.7015
-
-
-def test_compara_o_mesmo_cpl():
-    """CPL1 so pode ser comparado com CPL1 — nunca com o CPL2."""
-    c = robo.comparar_com_regua(REGUA, "1", 0.70, 62866, 30)
-    assert c["qtd"] == 3, "devia usar as 3 oficinas do CPL1"
-    assert abs(c["media"] - MEDIA_CPL1) < 1e-6
-    c2 = robo.comparar_com_regua(REGUA, "2", 0.50, 62866, 30)
-    assert c2["qtd"] == 1, "CPL2 tem regua propria"
-
-
-def test_parcial_antes_de_24h():
-    """Antes de fechar o dia 1 nao existe veredito — so parcial."""
-    c = robo.comparar_com_regua(REGUA, "1", 0.294, 62866, 10)
-    assert c["status"] == "PARCIAL" and not c["fechou"]
-    # mesmo um numero altissimo continua parcial: a janela nao fechou
-    assert robo.comparar_com_regua(REGUA, "1", 2.0, 62866, 23)["status"] == "PARCIAL"
-
-
-def test_veredito_depois_de_24h():
-    """O veredito usa o % CONGELADO nas 24h, nao o acumulado de agora."""
-    assert robo.comparar_com_regua(REGUA, "1", 0.90, 62866, 24, 0.90)["status"] == "ACIMA"
-    assert robo.comparar_com_regua(REGUA, "1", 0.40, 62866, 24, 0.40)["status"] == "ABAIXO"
-    assert robo.comparar_com_regua(REGUA, "1", 0.70, 62866, 24, MEDIA_CPL1)["status"] == "IGUAL"
-
-
 def test_nao_repete_a_mesma_hora():
     """O workflow roda 2x por hora: a 2a execucao nao pode duplicar a coleta."""
     h = [{"LANCAMENTO": "LC0526", "CPL": "1", "HORA_DESDE_PUBLICACAO": "5"}]
     assert robo.ja_coletado(h, "LC0526", "1", 5)
     assert not robo.ja_coletado(h, "LC0526", "1", 6)
     assert not robo.ja_coletado(h, "LC0526", "2", 5)
-
-
-def test_nao_compara_77h_contra_regua_de_24h():
-    """
-    O bug real de 30/07: o video tinha 114,3% acumulado em 77h e o robo
-    dizia ACIMA da media de 70,1% — mas no fim do dia 1 tinha 56,1%,
-    que e ABAIXO. O veredito tem que seguir o numero das 24h.
-    """
-    c = robo.comparar_com_regua(REGUA, "1", 1.143, 62866, 77, pct_fechamento=0.561)
-    assert c["status"] == "ABAIXO", "veredito deve usar as 24h, nao as 77h"
-    assert c["pct_veredito"] == 0.561
-
-
-def test_sem_fechamento_nao_da_veredito():
-    """Passou de 24h mas nao achou o snapshot do fechamento: segura o veredito."""
-    c = robo.comparar_com_regua(REGUA, "1", 1.143, 62866, 77, pct_fechamento=None)
-    assert c["status"] == "PARCIAL" and not c["fechou"]
-
-
-def test_pct_no_fechamento_pega_o_snapshot_certo():
-    hist = [
-        {"LANCAMENTO": "LC0426", "CPL": "1", "HORA_DESDE_PUBLICACAO": "10", "PCT_VIEWS": "0.294"},
-        {"LANCAMENTO": "LC0426", "CPL": "1", "HORA_DESDE_PUBLICACAO": "24", "PCT_VIEWS": "0.561"},
-        {"LANCAMENTO": "LC0426", "CPL": "1", "HORA_DESDE_PUBLICACAO": "77", "PCT_VIEWS": "1.143"},
-        {"LANCAMENTO": "LC0426", "CPL": "2", "HORA_DESDE_PUBLICACAO": "24", "PCT_VIEWS": "0.30"},
-        {"LANCAMENTO": "OUTRO", "CPL": "1", "HORA_DESDE_PUBLICACAO": "24", "PCT_VIEWS": "0.99"},
-    ]
-    assert robo.pct_no_fechamento(hist, "LC0426", "1") == (0.561, 24)
-    assert robo.pct_no_fechamento(hist, "LC0426", "2") == (0.30, 24)
-    assert robo.pct_no_fechamento(hist, "INEXISTENTE", "1") is None
-
-
-def test_escolhe_a_base_mais_parecida():
-    """62.866 leads -> MORANGUINHO (65.826) e o comparavel justo."""
-    c = robo.comparar_com_regua(REGUA, "1", 0.30, 62866, 10)
-    assert c["parecido"]["personagem"] == "MORANGUINHO"
-    assert c["melhor"]["personagem"] == "ANJINHO"
-    assert c["pior"]["personagem"] == "FOFUXO"
-
-
-def test_sem_regua_nao_quebra():
-    assert robo.comparar_com_regua(REGUA, "9", 0.30, 62866, 10) is None
-    assert robo.comparar_com_regua(REGUA, "1", None, 62866, 10) is None
-    assert robo.comparar_com_regua({}, "1", 0.30, 62866, 10) is None
-
-
-def test_mensagem_sai_inteira():
-    comp = robo.comparar_com_regua(REGUA, "1", 0.294, 62866, 10)
-    msg = robo.montar_mensagem([{
-        "lancamento": "LC0426", "personagem": "Fofuxo AUAU", "cpl": "1",
-        "horas": 10, "views": 18476, "pct": 0.294, "comp": comp,
-    }], __import__("datetime").datetime(2026, 7, 27, 18, 6))
-    assert "29,4%" in msg and "MORANGUINHO" in msg and "faltam 14h" in msg
-    print(msg)
 
 
 def test_aquecimento_tem_nome_proprio_e_nao_mistura_com_cpl():
@@ -153,11 +64,8 @@ def test_curva_por_hora_pct_e_juncao_atual_x_antigos():
                + robo.linhas_da_curva("jun 2026", "MORANGUINHO", "1", "m", [1000, 1000], 10000)  # 20% na hora 2
                + robo.linhas_da_curva("jun 2026", "MORANGUINHO", "2", "m2", [9000, 9000], 10000))  # CPL2: fica fora
     csv_ = robo.juntar_curvas(antigos, l)
-    c = robo.comparar_por_hora(csv_, "LC0526", "1")
-    assert c["hora"] == 2 and abs(c["pct"] - 0.30) < 1e-9 and c["qtd"] == 2
-    assert abs(c["media"] - 0.30) < 1e-9, "media de 40% e 20%, sem o CPL2"
-    assert c["melhor"]["personagem"] == "ANJINHO" and c["pior"]["personagem"] == "MORANGUINHO"
-    assert c["parecido"]["personagem"] == "MORANGUINHO", "10.000 leads e o mais perto de 10.000"
+    assert robo.linha_vizinhos(csv_, "LC0526", "1") == "✅ CPL 1: acima da Moranguinho, abaixo do Anjinho", \
+        "30% na hora 2: entre 40% e 20%, sem o CPL2"
 
     # nova hora do atual: troca so as linhas dele
     novo = robo.linhas_da_curva("LC0526", "Emilia", "1", "x", [2000, 1000, 500], 10000)
@@ -166,10 +74,7 @@ def test_curva_por_hora_pct_e_juncao_atual_x_antigos():
     # falha (nenhuma linha nova) nao apaga nada
     assert robo.juntar_curvas(csv2, []) == csv2
     # hora 3: nenhum antigo tem -> sem comparacao (nunca inventar)
-    assert robo.comparar_por_hora(csv2, "LC0526", "1") is None
-    assert "🟢" not in robo.linha_hora_a_hora(c), "antes das 24h nao tem bolinha"
-
-    assert "Studio (fechado até a hora 2)" in robo.linha_hora_a_hora(c)
+    assert robo.linha_vizinhos(csv2, "LC0526", "1") is None
 
 
 def test_push_do_mac_sobe_commit_parado_e_avisa_quando_falha():
@@ -218,6 +123,56 @@ def test_captacao_fechada_usa_base_fixa():
     aberto = {"lancamento": "LC0626", "leads": 50000}
     assert robo.base_de_leads(aberto, 51234) == 51234, "captacao aberta: vale a planilha da agencia"
     assert robo.base_de_leads(aberto, None) == 50000, "sem planilha: vale a coluna LEADS"
+
+def test_mensagem_nova_formato_aprovado():
+    """
+    So o lancamento atual, so aquecimentos e CPLs. Exemplo com 3 oficinas antigas na hora 2:
+    CPL2: Bianca 40 · Emilia 35 · Chapeuzinho 20 · Coelho 10. Media na hora 2: 50 / 42,5 / 30 / 20 -> 2o de 4.
+    Queda Emilia -30% x antigas -33%, -50%, -67% -> a menor.
+    """
+    import datetime
+    curvas = []
+    for lanc, nome, c1, c2 in [("LC0526", "Emília - Aula 1", 5000, 3500), ("mar 2026", "BIANCA", 6000, 4000),
+                               ("set 2025", "CHAPÉUZINHO", 4000, 2000), ("fev 2026", "COELHO FOFUXO", 3000, 1000)]:
+        curvas += robo.linhas_da_curva(lanc, nome, "1", "x", [c1 / 2, c1 / 2], 10000)
+        curvas += robo.linhas_da_curva(lanc, nome, "2", "x", [c2 / 2, c2 / 2], 10000)
+    curvas.append(["LC0526", "Emília - Aula 1", "1", "x", 3, 5500, 10000, "0.550000"])  # CPL1 ja na hora 3
+    ativos = [
+        {"lancamento": "LC0426", "cpl": "1", "unicos": 0},                      # outro lancamento: some
+        {"lancamento": "LC0526", "cpl": "AQ1", "unicos": 900},
+        {"lancamento": "LC0526", "cpl": "AQ0", "unicos": 0},
+        {"lancamento": "LC0526", "cpl": "1", "unicos": 24040},
+        {"lancamento": "LC0526", "cpl": "2", "unicos": 0},
+    ]
+    hist = [
+        {"LANCAMENTO": "LC0526", "CPL": "AQ0", "VIEWS": "12000", "PCT_VIEWS": "0.1"},
+        {"LANCAMENTO": "LC0526", "CPL": "AQ0", "VIEWS": "12345", "PCT_VIEWS": "0.1"},  # o mais recente vale
+        {"LANCAMENTO": "LC0526", "CPL": "AQ1", "VIEWS": "9800", "PCT_VIEWS": "0.1"},
+        {"LANCAMENTO": "LC0526", "CPL": "1", "VIEWS": "38312", "PCT_VIEWS": "0.605"},
+        {"LANCAMENTO": "LC0526", "CPL": "2", "VIEWS": "11841", "PCT_VIEWS": "0.187"},
+        {"LANCAMENTO": "LC0426", "CPL": "1", "VIEWS": "99999", "PCT_VIEWS": "0.9"},
+    ]
+    msg = robo.montar_mensagem("LC0526", ativos, hist, curvas, datetime.datetime(2026, 10, 13, 17, 6))
+    print(msg)
+    linhas = msg.splitlines()
+    assert "99" not in msg and "LC0426" not in msg, "outro lancamento nao entra"
+    assert linhas[2] == "🔥 Aquecimentos: 12,3 mil · 9,8 mil", "ordem AQ0, AQ1 e contador mais recente"
+    assert linhas[3] == "🎬 CPL 1: 38,3 mil (60%) · CPL 2: 11,8 mil (19%)"
+    assert "✅ CPL 1" not in msg, "CPL1 na hora 3 nao tem oficina antiga: fica de fora (nunca inventar)"
+    assert "✅ CPL 2: acima do Chapéuzinho, abaixo da Bianca" in linhas
+    assert "📍 Média dos CPLs: 2º de 4 lançamentos" in linhas
+    assert "📉 Queda do 1 pro 2: −30% (a menor de todas 👏)" in linhas
+    assert linhas[-1] == "👤 Únicos: CPL 1 24 mil · CPL 2 amanhã"
+
+    # queda que nao e extrema mostra a media das outras: Bianca -33% x -30, -50, -67
+    assert robo.linhas_media_e_queda(curvas, "mar 2026", ["1", "2"])[1] == "📉 Queda do 1 pro 2: −33% (média −49%)"
+    # lanterna e primeiro
+    assert robo.linha_vizinhos(curvas, "fev 2026", "2") == "⚠️ CPL 2: último, abaixo do Chapéuzinho"
+    assert robo.linha_vizinhos(curvas, "mar 2026", "1") == "✅ CPL 1: acima de todos"
+    # so CPL1 e nada de curva: sem linhas de analise inventadas
+    so1 = robo.montar_mensagem("LC0526", ativos[:4], hist, [], datetime.datetime(2026, 10, 13, 17, 6))
+    assert "✅" not in so1 and "📍" not in so1 and "📉" not in so1 and "👤 Únicos: CPL 1 24 mil" in so1
+
 
 if __name__ == "__main__":
     for nome, fn in sorted(globals().items()):

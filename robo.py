@@ -52,10 +52,8 @@ GOOGLE_SA_JSON = os.environ.get("GOOGLE_SA_JSON", "")
 # ponytail: numero fixo por lancamento; no proximo, ou poe aqui ou preenche LEADS na CONFIG.
 LEADS_FECHADOS = {"LC0526": 63271}
 
-TOLERANCIA = 0.02  # 2% pra cima/baixo conta como "igual"
 FUSO = ZoneInfo("America/Sao_Paulo")
 ARQUIVO_SNAPSHOTS = os.path.join("dados", "snapshots.csv")
-ARQUIVO_REGUA = os.path.join("dados", "regua.csv")
 
 CABECALHO_SNAPSHOTS = [
     "TIMESTAMP", "LANCAMENTO", "TAG", "CPL", "VIDEO_ID",
@@ -222,87 +220,12 @@ def gravar_snapshots(novas_linhas):
         w.writerows(novas_linhas)
 
 
-def ler_regua():
-    """
-    A regua: como cada CPL de cada lancamento anterior se saiu no DIA DA
-    ESTREIA (% de views sobre os leads daquele lancamento). Gerada pelo
-    levantar_historico.py a partir do YouTube Analytics.
-    """
-    if not os.path.exists(ARQUIVO_REGUA):
-        return {}
-    por_cpl = {}
-    with open(ARQUIVO_REGUA, newline="", encoding="utf-8") as f:
-        for r in csv.DictReader(f):
-            try:
-                por_cpl.setdefault(str(r["CPL"]), []).append({
-                    "lancamento": r["LANCAMENTO"], "personagem": r["PERSONAGEM"],
-                    "leads": int(r["LEADS"]), "pct": float(r["PCT"]) / 100,
-                })
-            except (ValueError, KeyError):
-                continue
-    return por_cpl
-
-
 def ja_coletado(historico, lancamento, cpl, horas):
     return any(
         h.get("LANCAMENTO") == lancamento and str(h.get("CPL")) == str(cpl)
         and int(float(h.get("HORA_DESDE_PUBLICACAO") or -1)) == horas
         for h in historico
     )
-
-
-def pct_no_fechamento(historico, lancamento, cpl, limite=24):
-    """
-    O % que o video tinha ao completar ~24h — o unico numero comparavel com
-    a regua. Sem isso o robo compararia 77h contra 24h e diria "acima" de
-    um jeito que nao quer dizer nada.
-    """
-    candidatos = [
-        h for h in historico
-        if h.get("LANCAMENTO") == lancamento and str(h.get("CPL")) == str(cpl)
-        and h.get("PCT_VIEWS") not in ("", None)
-        and int(float(h.get("HORA_DESDE_PUBLICACAO", 0))) <= limite
-    ]
-    if not candidatos:
-        return None
-    ultimo = max(candidatos, key=lambda h: int(float(h["HORA_DESDE_PUBLICACAO"])))
-    return float(ultimo["PCT_VIEWS"]), int(float(ultimo["HORA_DESDE_PUBLICACAO"]))
-
-
-def comparar_com_regua(regua, cpl, pct_atual, leads_atual, horas, pct_fechamento=None):
-    """
-    Compara o CPL de agora com o MESMO CPL dos outros lancamentos
-    (CPL1 x CPL1, CPL2 x CPL2 — nunca CPL1 x CPL2).
-
-    A regua e o fechamento do dia da estreia (~24h). Antes disso a
-    comparacao e PARCIAL; depois, o veredito usa o % CONGELADO nas 24h
-    (pct_fechamento), nunca o acumulado de agora.
-    """
-    linhas = regua.get(str(cpl), [])
-    if not linhas or pct_atual is None:
-        return None
-    pct_veredito = pct_fechamento if pct_fechamento is not None else pct_atual
-
-    pcts = [l["pct"] for l in linhas]
-    media = sum(pcts) / len(pcts)
-    melhor = max(linhas, key=lambda l: l["pct"])
-    pior = min(linhas, key=lambda l: l["pct"])
-    # o comparavel mais justo: lancamento com base de leads mais parecida
-    parecido = min(linhas, key=lambda l: abs(l["leads"] - leads_atual)) if leads_atual else None
-
-    fechou = horas >= 24 and pct_fechamento is not None
-    if not fechou:
-        status = "PARCIAL"
-    elif pct_veredito > media * (1 + TOLERANCIA):
-        status = "ACIMA"
-    elif pct_veredito < media * (1 - TOLERANCIA):
-        status = "ABAIXO"
-    else:
-        status = "IGUAL"
-
-    return {"status": status, "media": media, "melhor": melhor, "pior": pior,
-            "parecido": parecido, "qtd": len(linhas), "fechou": fechou,
-            "pct_veredito": pct_veredito}
 
 
 # ===================== CURVA HORA A HORA (Studio) =====================
@@ -357,42 +280,6 @@ def gravar_curvas(linhas, arquivo=ARQUIVO_CURVAS):
         w.writerows(linhas)
 
 
-def comparar_por_hora(curvas, lancamento, cpl):
-    """
-    CPLn do lancamento atual x CPLn de cada oficina antiga NA MESMA HORA (a ultima com dado do atual).
-    Devolve None se o atual ainda nao tem curva ou nao ha antigo com dado nessa hora.
-    """
-    cpl = str(cpl)
-    meu = [l for l in curvas if l[0] == lancamento and str(l[2]) == cpl and l[7] != ""]
-    if not meu:
-        return None
-    ult = max(meu, key=lambda l: int(l[4]))
-    hora, pct_atual, leads_atual = int(ult[4]), float(ult[7]), int(ult[6] or 0)
-    outros = [{"lancamento": l[0], "personagem": l[1], "leads": int(l[6]), "pct": float(l[7])}
-              for l in curvas
-              if l[0] != lancamento and str(l[2]) == cpl and int(l[4]) == hora and l[7] != ""]
-    if not outros:
-        return None
-    media = sum(o["pct"] for o in outros) / len(outros)
-    return {"hora": hora, "pct": pct_atual, "media": media, "qtd": len(outros),
-            "melhor": max(outros, key=lambda o: o["pct"]), "pior": min(outros, key=lambda o: o["pct"]),
-            "parecido": min(outros, key=lambda o: abs(o["leads"] - leads_atual))}
-
-
-def linha_hora_a_hora(c):
-    """Linha do Telegram. Sem bolinha verde/vermelha antes das 24h: o dia 1 ainda nao fechou."""
-    txt = (f"⏱ Studio (fechado até a hora {c['hora']}): *{pctfmt(c['pct'])}* · média {pctfmt(c['media'])} "
-           f"({c['qtd']} oficinas) · base parecida {c['parecido']['personagem']} {pctfmt(c['parecido']['pct'])}")
-    if c["hora"] >= 24:
-        if c["pct"] > c["media"] * (1 + TOLERANCIA):
-            txt = "🟢 " + txt
-        elif c["pct"] < c["media"] * (1 - TOLERANCIA):
-            txt = "🔴 " + txt
-        else:
-            txt = "🟡 " + txt
-    return txt + "\n"
-
-
 # ===================== TELEGRAM =====================
 
 def enviar_telegram(texto):
@@ -400,52 +287,119 @@ def enviar_telegram(texto):
         print("Telegram nao configurado.", file=sys.stderr)
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    _post(url, {"chat_id": TELEGRAM_CHAT_ID, "text": texto, "parse_mode": "Markdown"})
+    _post(url, {"chat_id": TELEGRAM_CHAT_ID, "text": texto})
 
 
-def nfmt(n):
-    return f"{int(n):,}".replace(",", ".")
+def mil(n):
+    """38.312 -> '38,3 mil' · 24.000 -> '24 mil' · 812 -> '812'."""
+    n = int(n)
+    return str(n) if n < 1000 else f"{n / 1000:.1f}".replace(".", ",").removesuffix(",0") + " mil"
 
 
-def pctfmt(x):
-    return f"{x * 100:.1f}".replace(".", ",") + "%"
+def variacao(x):
+    """-0.27 -> '−27%' · 0.05 -> '+5%'."""
+    return f"{x * 100:+.0f}%".replace("-", "−")
 
 
-def montar_mensagem(itens, agora):
-    data = agora.strftime("%d/%m %H:%M")
-    msg = f"📊 *ACOMPANHAMENTO CPL* — {data}\n"
-    for it in itens:
-        pct_txt = "—" if it["pct"] is None else pctfmt(it["pct"])
-        msg += (f"\n*{it['lancamento']}* · {rotulo(it['cpl'])} ({it['personagem']})"
-                f"\nhora {it['horas']}: {nfmt(it['views'])} views · *{pct_txt}* dos leads\n")
-        if it.get("unicos") and it.get("leads"):
-            msg += (f"espectadores únicos (Studio, até ontem): {nfmt(it['unicos'])} · "
-                    f"*{pctfmt(it['unicos'] / it['leads'])}* dos leads\n")
-        if it.get("hora_a_hora"):
-            msg += linha_hora_a_hora(it["hora_a_hora"])
+# ponytail: artigo por nome; oficina nova com nome feminino entra aqui
+FEMININAS = {"BIANCA", "BRANCA DE NEVE", "MORANGUINHO", "EMÍLIA"}
 
-        comp = it["comp"]
-        if not comp:
-            msg += "⚪️ sem régua pra esse vídeo ainda\n"
-            continue
 
-        if comp["fechou"]:
-            seta = {"ACIMA": "🟢", "ABAIXO": "🔴", "IGUAL": "🟡"}[comp["status"]]
-            dif = comp["pct_veredito"] - comp["media"]
-            dif_txt = ("+" if dif >= 0 else "") + pctfmt(dif)
-            msg += (f"no fim do dia 1: *{pctfmt(comp['pct_veredito'])}*\n"
-                    f"{seta} *{comp['status']}* da média ({dif_txt})\n")
+def com_artigo(personagem):
+    """'BIANCA' -> 'da Bianca' · 'COELHO FOFUXO' -> 'do Coelho Fofuxo'."""
+    p = personagem.strip().upper()
+    nome = p.title().replace(" De ", " de ").replace("Auau", "AUAU")
+    return ("da " if p in FEMININAS else "do ") + nome
+
+
+def pct_na_hora(curvas, cpl, hora):
+    """{lancamento: (personagem, pct)} de todo lancamento que tem o CPLn fechado naquela hora (Studio)."""
+    return {l[0]: (l[1], float(l[7])) for l in curvas
+            if str(l[2]) == str(cpl) and int(l[4]) == hora and l[7] != ""}
+
+
+def ultima_hora(curvas, lancamento, cpl):
+    horas = [int(l[4]) for l in curvas if l[0] == lancamento and str(l[2]) == str(cpl) and l[7] != ""]
+    return max(horas) if horas else None
+
+
+def linha_vizinhos(curvas, lancamento, cpl):
+    """
+    Ranking do CPLn na ultima hora com Studio do atual (CPLn x CPLn, mesma hora desde a publicacao):
+    quem esta logo acima e logo abaixo. Sem curva ou sem antigo nessa hora -> None (nunca inventar).
+    """
+    hora = ultima_hora(curvas, lancamento, cpl)
+    todos = pct_na_hora(curvas, cpl, hora) if hora else {}
+    if lancamento not in todos or len(todos) < 2:
+        return None
+    ordem = sorted(todos, key=lambda k: -todos[k][1])
+    i = ordem.index(lancamento)
+    if i == 0:
+        return f"✅ CPL {cpl}: acima de todos"
+    acima = com_artigo(todos[ordem[i - 1]][0])
+    if i == len(ordem) - 1:
+        return f"⚠️ CPL {cpl}: último, abaixo {acima}"
+    return f"✅ CPL {cpl}: acima {com_artigo(todos[ordem[i + 1]][0])}, abaixo {acima}"
+
+
+def linhas_media_e_queda(curvas, lancamento, cpls):
+    """
+    Na ultima hora do CPL mais novo: media dos CPLs do atual x a de cada oficina que tem TODOS esses CPLs
+    nessa hora, e a queda do penultimo pro ultimo CPL. Sem oficina comparavel -> nenhuma linha.
+    """
+    hora = ultima_hora(curvas, lancamento, cpls[-1])
+    if not hora:
+        return []
+    por_cpl = [pct_na_hora(curvas, c, hora) for c in cpls]
+    comuns = [k for k in por_cpl[0] if all(k in p for p in por_cpl)]
+    if lancamento not in comuns or len(comuns) < 2:
+        return []
+    media = {k: sum(p[k][1] for p in por_cpl) / len(cpls) for k in comuns}
+    pos = 1 + sum(1 for k in comuns if media[k] > media[lancamento])
+    linhas = [f"📍 Média dos CPLs: {pos}º de {len(comuns)} lançamentos"]
+    if len(cpls) >= 2:
+        queda = {k: por_cpl[-1][k][1] / por_cpl[-2][k][1] - 1 for k in comuns}
+        q = queda[lancamento]
+        outras = [queda[k] for k in comuns if k != lancamento]
+        if q > max(outras):
+            fim = "(a menor de todas 👏)"
+        elif q < min(outras):
+            fim = "(a maior de todas ⚠️)"
         else:
-            faltam = 24 - it["horas"]
-            msg += f"🕐 parcial — faltam {faltam}h pra fechar o dia 1\n"
+            fim = f"(média {variacao(sum(outras) / len(outras))})"
+        linhas.append(f"📉 Queda do {cpls[-2]} pro {cpls[-1]}: {variacao(q)} {fim}")
+    return linhas
 
-        msg += f"\n_Régua do {rotulo(it['cpl'])} (dia da estreia, {comp['qtd']} oficinas):_\n"
-        p = comp["parecido"]
-        if p:
-            msg += f"  base parecida · {p['personagem']}: {pctfmt(p['pct'])}\n"
-        msg += (f"  média: {pctfmt(comp['media'])}\n"
-                f"  melhor · {comp['melhor']['personagem']}: {pctfmt(comp['melhor']['pct'])}\n"
-                f"  pior · {comp['pior']['personagem']}: {pctfmt(comp['pior']['pct'])}\n")
+
+def montar_mensagem(lancamento, ativos, historico, curvas, agora):
+    """
+    So o lancamento atual, so aquecimentos e CPLs. Views = contador publico mais recente (snapshots);
+    comparacoes = Studio x Studio na mesma hora (curvas_por_hora); unicos = CONFIG (Studio, ~1 dia de atraso).
+    """
+    def views(cfg):
+        ult = [h for h in historico if h.get("LANCAMENTO") == lancamento and str(h.get("CPL")) == cfg["cpl"]]
+        return ult[-1] if ult else None
+
+    meus = [c for c in ativos if c["lancamento"] == lancamento]
+    aqs = sorted((c for c in meus if c["cpl"].startswith("AQ")), key=lambda c: int(c["cpl"][2:] or 0))
+    cpls = sorted((c for c in meus if c["cpl"].isdigit()), key=lambda c: int(c["cpl"]))
+    cpls = [c for c in cpls if views(c)]
+
+    msg = f"📊 {lancamento} · {agora.strftime('%d/%m %H')}h\n\n"
+    vs = [mil(views(c)["VIEWS"]) for c in aqs if views(c)]
+    if vs:
+        msg += "🔥 Aquecimentos: " + " · ".join(vs) + "\n"
+    if cpls:
+        msg += "🎬 " + " · ".join(
+            f"CPL {c['cpl']}: {mil(views(c)['VIEWS'])}"
+            + (f" ({float(views(c)['PCT_VIEWS']) * 100:.0f}%)" if views(c).get("PCT_VIEWS") else "")
+            for c in cpls) + "\n"
+
+        analise = [l for c in cpls if (l := linha_vizinhos(curvas, lancamento, c["cpl"]))]
+        analise += linhas_media_e_queda(curvas, lancamento, [c["cpl"] for c in cpls])
+        analise.append("👤 Únicos: " + " · ".join(
+            f"CPL {c['cpl']} {mil(c['unicos']) if c['unicos'] else 'amanhã'}" for c in cpls))
+        msg += "\n" + "\n".join(analise) + "\n"
     return msg
 
 
@@ -470,7 +424,6 @@ def main():
         cfg["leads"] = base_de_leads(cfg, contagens.get(link))
     print(f"Leads unicos da planilha: {contagens or 'coluna PLANILHA_LEADS vazia'}")
 
-    regua = ler_regua()
     curvas = ler_curvas()
     historico = ler_historico()
     agora = datetime.now(timezone.utc)
@@ -497,22 +450,14 @@ def main():
             cfg["unicos"] or "", f"{cfg['unicos'] / cfg['leads']:.6f}" if cfg["unicos"] and cfg["leads"] else "",
         ]
         novas_linhas.append(linha)
-        # a coleta de agora conta pro fechamento (ex.: esta e a da hora 24)
-        historico.append(dict(zip(CABECALHO_SNAPSHOTS, map(str, linha))))
-        fech = pct_no_fechamento(historico, cfg["lancamento"], cfg["cpl"])
-        comp = comparar_com_regua(regua, cfg["cpl"], pct, cfg["leads"], horas,
-                                  pct_fechamento=fech[0] if fech else None)
-        itens_resumo.append({
-            "lancamento": cfg["lancamento"], "personagem": cfg["personagem"],
-            "cpl": cfg["cpl"], "horas": horas, "views": stats["views"],
-            "pct": pct, "comp": comp, "unicos": cfg["unicos"], "leads": cfg["leads"],
-            "hora_a_hora": comparar_por_hora(curvas, cfg["lancamento"], cfg["cpl"]),
-        })
+        historico.append(dict(zip(CABECALHO_SNAPSHOTS, map(str, linha))))  # a mensagem usa a coleta de agora
+        itens_resumo.append(cfg)
 
     if novas_linhas:
         gravar_snapshots(novas_linhas)
     if itens_resumo:
-        enviar_telegram(montar_mensagem(itens_resumo, agora_br))
+        # lancamento atual = o da ultima linha ATIVA da CONFIG
+        enviar_telegram(montar_mensagem(ativos[-1]["lancamento"], ativos, historico, curvas, agora_br))
         print(f"OK: {len(itens_resumo)} video(s) coletados e enviados ao Telegram.")
 
 
