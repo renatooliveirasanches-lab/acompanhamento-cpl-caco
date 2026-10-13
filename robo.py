@@ -381,14 +381,15 @@ def montar_mensagem(lancamento, ativos, historico, curvas, agora):
         return ult[-1] if ult else None
 
     meus = [c for c in ativos if c["lancamento"] == lancamento]
-    aqs = sorted((c for c in meus if c["cpl"].startswith("AQ")), key=lambda c: int(c["cpl"][2:] or 0))
+    # aquecimentos na ordem de publicacao (mais antigo primeiro), pelo nome da CONFIG: o codigo AQn nao segue a ordem
+    aqs = sorted((c for c in meus if c["cpl"].startswith("AQ") and views(c)),
+                 key=lambda c: -int(float(views(c).get("HORA_DESDE_PUBLICACAO") or 0)))
     cpls = sorted((c for c in meus if c["cpl"].isdigit()), key=lambda c: int(c["cpl"]))
     cpls = [c for c in cpls if views(c)]
 
     msg = f"📊 {lancamento} · {agora.strftime('%d/%m %H')}h\n\n"
-    vs = [mil(views(c)["VIEWS"]) for c in aqs if views(c)]
-    if vs:
-        msg += "🔥 Aquecimentos: " + " · ".join(vs) + "\n"
+    if aqs:
+        msg += "🔥 Aquecimentos: " + " · ".join(f"{c['personagem']}: {mil(views(c)['VIEWS'])}" for c in aqs) + "\n"
     if cpls:
         msg += "🎬 " + " · ".join(
             f"CPL {c['cpl']}: {mil(views(c)['VIEWS'])}"

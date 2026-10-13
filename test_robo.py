@@ -139,15 +139,15 @@ def test_mensagem_nova_formato_aprovado():
     curvas.append(["LC0526", "Emília - Aula 1", "1", "x", 3, 5500, 10000, "0.550000"])  # CPL1 ja na hora 3
     ativos = [
         {"lancamento": "LC0426", "cpl": "1", "unicos": 0},                      # outro lancamento: some
-        {"lancamento": "LC0526", "cpl": "AQ1", "unicos": 900},
-        {"lancamento": "LC0526", "cpl": "AQ0", "unicos": 0},
+        {"lancamento": "LC0526", "cpl": "AQ0", "personagem": "Tiara", "unicos": 0},
+        {"lancamento": "LC0526", "cpl": "AQ1", "personagem": "Porquinho 1", "unicos": 900},
         {"lancamento": "LC0526", "cpl": "1", "unicos": 24040},
         {"lancamento": "LC0526", "cpl": "2", "unicos": 0},
     ]
     hist = [
-        {"LANCAMENTO": "LC0526", "CPL": "AQ0", "VIEWS": "12000", "PCT_VIEWS": "0.1"},
-        {"LANCAMENTO": "LC0526", "CPL": "AQ0", "VIEWS": "12345", "PCT_VIEWS": "0.1"},  # o mais recente vale
-        {"LANCAMENTO": "LC0526", "CPL": "AQ1", "VIEWS": "9800", "PCT_VIEWS": "0.1"},
+        {"LANCAMENTO": "LC0526", "CPL": "AQ0", "VIEWS": "12000", "HORA_DESDE_PUBLICACAO": "137"},
+        {"LANCAMENTO": "LC0526", "CPL": "AQ0", "VIEWS": "12345", "HORA_DESDE_PUBLICACAO": "138"},  # o mais recente vale
+        {"LANCAMENTO": "LC0526", "CPL": "AQ1", "VIEWS": "94593", "HORA_DESDE_PUBLICACAO": "370"},
         {"LANCAMENTO": "LC0526", "CPL": "1", "VIEWS": "38312", "PCT_VIEWS": "0.605"},
         {"LANCAMENTO": "LC0526", "CPL": "2", "VIEWS": "11841", "PCT_VIEWS": "0.187"},
         {"LANCAMENTO": "LC0426", "CPL": "1", "VIEWS": "99999", "PCT_VIEWS": "0.9"},
@@ -156,7 +156,8 @@ def test_mensagem_nova_formato_aprovado():
     print(msg)
     linhas = msg.splitlines()
     assert "99" not in msg and "LC0426" not in msg, "outro lancamento nao entra"
-    assert linhas[2] == "🔥 Aquecimentos: 12,3 mil · 9,8 mil", "ordem AQ0, AQ1 e contador mais recente"
+    assert linhas[2] == "🔥 Aquecimentos: Porquinho 1: 94,6 mil · Tiara: 12,3 mil", \
+        "ordem de publicacao (AQ1 saiu antes do AQ0), pelo nome, contador mais recente"
     assert linhas[3] == "🎬 CPL 1: 38,3 mil (60%) · CPL 2: 11,8 mil (19%)"
     assert "✅ CPL 1" not in msg, "CPL1 na hora 3 nao tem oficina antiga: fica de fora (nunca inventar)"
     assert "✅ CPL 2: acima do Chapéuzinho, abaixo da Bianca" in linhas
