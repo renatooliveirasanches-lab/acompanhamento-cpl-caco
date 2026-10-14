@@ -175,7 +175,7 @@ def buscar_estatisticas(video_id):
     """
     url = "https://www.googleapis.com/youtube/v3/videos"
     ids = video_id.split("+")
-    params = {"part": "statistics,snippet", "id": ",".join(ids), "key": YOUTUBE_API_KEY}
+    params = {"part": "statistics,snippet,liveStreamingDetails", "id": ",".join(ids), "key": YOUTUBE_API_KEY}
     data = json.loads(_get(url, params))
     if data.get("error"):
         print(f"Erro YouTube API ({video_id}): {data['error']}", file=sys.stderr)
@@ -186,8 +186,9 @@ def buscar_estatisticas(video_id):
     if len(itens) < len(ids):
         print(f"Aviso: so {len(itens)} de {len(ids)} videos encontrados em {video_id}", file=sys.stderr)
     soma = lambda campo: sum(int(i.get("statistics", {}).get(campo, 0) or 0) for i in itens)
-    pubs = [datetime.fromisoformat(p.replace("Z", "+00:00"))
-            for p in (i.get("snippet", {}).get("publishedAt") for i in itens) if p]
+    # estreia/live: conta da hora real em que comecou (no ao vivo o publishedAt pode ainda ser a hora do agendamento)
+    inicio = lambda i: i.get("liveStreamingDetails", {}).get("actualStartTime") or i.get("snippet", {}).get("publishedAt")
+    pubs = [datetime.fromisoformat(p.replace("Z", "+00:00")) for p in map(inicio, itens) if p]
     return {
         "views": soma("viewCount"),
         "likes": soma("likeCount"),

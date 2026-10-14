@@ -203,12 +203,14 @@ def test_cpl_agendado_nao_entra_antes_da_estreia():
     iso = lambda h: (agora - datetime.timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ")
     api = {"cpl1": (iso(40), "none", "38000"), "cpl2": (iso(16), "none", "13000"),
            "cpl3": (iso(3), "upcoming", "0"),       # agendado ha 3h, estreia so amanha
-           "cpl4": (iso(-5), "none", "0")}          # publicacao programada (data no futuro)
+           "cpl4": (iso(-5), "none", "0"),          # publicacao programada (data no futuro)
+           "cpl5": (iso(10), "live", "800", iso(0.1))}  # estreia AO VIVO: publishedAt ainda = agendamento, comecou ha 6 min
     resposta = lambda url, params=None, timeout=30: robo.json.dumps({"items": [{
         "statistics": {"viewCount": api[params["id"]][2]},
-        "snippet": {"publishedAt": api[params["id"]][0], "liveBroadcastContent": api[params["id"]][1]}}]})
+        "snippet": {"publishedAt": api[params["id"]][0], "liveBroadcastContent": api[params["id"]][1]},
+        **({"liveStreamingDetails": {"actualStartTime": api[params["id"]][3]}} if len(api[params["id"]]) > 3 else {})}]})
     ativos = [{"lancamento": "LC0526", "tag": "", "personagem": f"Emília - Aula {n}", "cpl": str(n),
-               "video_id": f"cpl{n}", "leads": 63271, "unicos": 0, "planilha_leads": ""} for n in (1, 2, 3, 4)]
+               "video_id": f"cpl{n}", "leads": 63271, "unicos": 0, "planilha_leads": ""} for n in (1, 2, 3, 4, 5)]
     pasta = tempfile.mkdtemp()
     enviadas = []
     troca = {"_get": resposta, "ler_config": lambda: ativos, "enviar_telegram": enviadas.append,
@@ -223,7 +225,8 @@ def test_cpl_agendado_nao_entra_antes_da_estreia():
     finally:
         for k, v in original.items():
             setattr(robo, k, v)
-    assert sorted(h["CPL"] for h in gravado) == ["1", "2"], gravado
+    # CPL1/CPL2 (sem liveStreamingDetails) seguem contando do publishedAt; CPL5 ao vivo conta da estreia = hora 0
+    assert sorted((h["CPL"], h["HORA_DESDE_PUBLICACAO"]) for h in gravado) == [("1", "40"), ("2", "16"), ("5", "0")], gravado
     assert len(enviadas) == 1 and "CPL 3" not in enviadas[0] and "CPL 4" not in enviadas[0], enviadas
     assert "🎬 <b>CPL 2</b>\n13 mil views" in enviadas[0], enviadas
 
