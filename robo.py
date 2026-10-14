@@ -347,35 +347,37 @@ def linha_vizinhos(curvas, lancamento, cpl):
     return f"✅ Acima {com_artigo(todos[ordem[i + 1]][0])}, abaixo {acima}"
 
 
-def linhas_media_e_queda(curvas, lancamento, cpls):
+def linhas_posicao_e_queda(curvas, lancamento, cpls):
     """
-    Na ultima hora do CPL mais novo: media dos CPLs do atual x a de cada oficina que tem TODOS esses CPLs
-    nessa hora, e a queda do penultimo pro ultimo CPL. Sem oficina comparavel -> nenhuma linha.
+    Cada CPL separado, nunca somado. Posicao do CPLn = ranking na ultima hora fechada do CPLn (a mesma conta da
+    linha ✅). Queda do n-1 pro n = os dois na ultima hora do CPLn, so oficinas com os dois nessa hora.
+    CPL sem curva Studio -> a linha dele some; sem nenhuma linha -> o titulo some.
     """
-    hora = ultima_hora(curvas, lancamento, cpls[-1])
-    if not hora:
-        return []
-    por_cpl = [pct_na_hora(curvas, c, hora) for c in cpls]
-    comuns = [k for k in por_cpl[0] if all(k in p for p in por_cpl)]
-    if lancamento not in comuns or len(comuns) < 2:
-        return []
-    media = {k: sum(p[k][1] for p in por_cpl) / len(cpls) for k in comuns}
-    pos = 1 + sum(1 for k in comuns if media[k] > media[lancamento])
-    linhas = [f"📍 <b>Média dos CPLs:</b> {pos}º de {len(comuns)} lançamentos"]
-    # oficina com 0% no CPL anterior nao tem queda (dividiria por zero): fica fora so dessa conta
-    queda = {k: por_cpl[-1][k][1] / por_cpl[-2][k][1] - 1 for k in comuns if por_cpl[-2][k][1] > 0} \
-        if len(cpls) >= 2 else {}
-    outras = [queda[k] for k in queda if k != lancamento]
-    if lancamento in queda and outras:
-        q = queda[lancamento]
-        if q > max(outras):
-            fim = "(a menor de todas 👏)"
-        elif q < min(outras):
-            fim = "(a maior de todas ⚠️)"
-        else:
-            fim = f"(média {variacao(sum(outras) / len(outras))})"
-        linhas.append(f"📉 <b>Queda do {cpls[-2]} pro {cpls[-1]}:</b> {variacao(q)} {fim}")
-    return linhas
+    posicoes, quedas = [], []
+    for i, c in enumerate(cpls):
+        hora = ultima_hora(curvas, lancamento, c)
+        if not hora:
+            continue
+        todos = pct_na_hora(curvas, c, hora)
+        if lancamento in todos and len(todos) >= 2:
+            pos = 1 + sum(1 for k in todos if todos[k][1] > todos[lancamento][1])
+            posicoes.append(f"CPL {c}: {pos}º de {len(todos)}")
+        if i == 0:
+            continue
+        antes = pct_na_hora(curvas, cpls[i - 1], hora)
+        # oficina com 0% no CPL anterior nao tem queda (dividiria por zero): fica fora so dessa conta
+        queda = {k: todos[k][1] / antes[k][1] - 1 for k in todos if k in antes and antes[k][1] > 0}
+        outras = [queda[k] for k in queda if k != lancamento]
+        if lancamento in queda and outras:
+            q = queda[lancamento]
+            fim = " (a menor de todas 👏)" if q > max(outras) else " (a maior de todas ⚠️)" if q < min(outras) else ""
+            quedas.append(f"Do {cpls[i - 1]} pro {c}: {variacao(q)}{fim}")
+    blocos = []
+    if posicoes:
+        blocos.append("📍 <b>Posição</b>\n" + "\n".join(posicoes))
+    if quedas:
+        blocos.append("📉 <b>Queda</b>\n" + "\n".join(quedas))
+    return blocos
 
 
 def montar_mensagem(lancamento, ativos, historico, curvas, agora):
@@ -407,8 +409,8 @@ def montar_mensagem(lancamento, ativos, historico, curvas, agora):
             b += "\n" + l
         b += "\n👤 Únicos: " + (mil(c["unicos"]) if c["unicos"] else "amanhã")
         blocos.append(b)
-    if cpls and (fim := linhas_media_e_queda(curvas, lancamento, [c["cpl"] for c in cpls])):
-        blocos.append("\n".join(fim))
+    if cpls:
+        blocos += linhas_posicao_e_queda(curvas, lancamento, [c["cpl"] for c in cpls])
     msg = "\n\n".join(blocos) + "\n"
     return msg
 

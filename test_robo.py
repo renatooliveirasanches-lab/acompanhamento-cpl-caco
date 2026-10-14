@@ -127,7 +127,7 @@ def test_captacao_fechada_usa_base_fixa():
 def test_mensagem_nova_formato_aprovado():
     """
     So o lancamento atual, so aquecimentos e CPLs. Exemplo com 3 oficinas antigas na hora 2:
-    CPL2: Bianca 40 · Emilia 35 · Chapeuzinho 20 · Coelho 10. Media na hora 2: 50 / 42,5 / 30 / 20 -> 2o de 4.
+    CPL2: Bianca 40 · Emilia 35 · Chapeuzinho 20 · Coelho 10 -> 2o de 4 (CPL1 da Emilia esta na hora 3, sem antigo).
     Queda Emilia -30% x antigas -33%, -50%, -67% -> a menor.
     """
     import datetime
@@ -161,11 +161,11 @@ def test_mensagem_nova_formato_aprovado():
         "🎬 <b>CPL 1</b>\n38,3 mil views (60% dos inscritos)\n👤 Únicos: 24 mil\n\n"  # hora 3 sem antigo: sem ✅
         "🎬 <b>CPL 2</b>\n11,8 mil views (19% dos inscritos)\n✅ Acima do Chapéuzinho, abaixo da Bianca\n"
         "👤 Únicos: amanhã\n\n"
-        "📍 <b>Média dos CPLs:</b> 2º de 4 lançamentos\n"
-        "📉 <b>Queda do 1 pro 2:</b> −30% (a menor de todas 👏)\n"), msg
+        "📍 <b>Posição</b>\nCPL 2: 2º de 4\n\n"
+        "📉 <b>Queda</b>\nDo 1 pro 2: −30% (a menor de todas 👏)\n"), msg
 
-    # queda que nao e extrema mostra a media das outras: Bianca -33% x -30, -50, -67
-    assert robo.linhas_media_e_queda(curvas, "mar 2026", ["1", "2"])[1] == "📉 <b>Queda do 1 pro 2:</b> −33% (média −49%)"
+    # queda que nao e extrema: so o numero. Bianca -33% x -30, -50, -67
+    assert robo.linhas_posicao_e_queda(curvas, "mar 2026", ["1", "2"])[1] == "📉 <b>Queda</b>\nDo 1 pro 2: −33%"
     # lanterna e primeiro
     assert robo.linha_vizinhos(curvas, "fev 2026", "2") == "⚠️ Último, abaixo do Chapéuzinho"
     assert robo.linha_vizinhos(curvas, "mar 2026", "1") == "✅ Acima de todos"
@@ -173,13 +173,56 @@ def test_mensagem_nova_formato_aprovado():
     so1 = robo.montar_mensagem("LC0526", ativos[:4], hist, [], datetime.datetime(2026, 10, 13, 17, 6))
     assert "✅" not in so1 and "📍" not in so1 and "📉" not in so1 and "👤 Únicos: 24 mil" in so1
 
-    # oficina antiga com 0% no CPL1: nao derruba a rodada; so sai da conta da queda (media continua)
+    # oficina antiga com 0% no CPL1: nao derruba a rodada; so sai da conta da queda (posicao continua)
     zero = curvas + robo.linhas_da_curva("jan 2025", "ROBIN", "2", "x", [500, 500], 10000) \
         + [["jan 2025", "ROBIN", "1", "x", 2, 0, 10000, "0.000000"]]
-    mq = robo.linhas_media_e_queda(zero, "LC0526", ["1", "2"])
-    assert mq == ["📍 <b>Média dos CPLs:</b> 2º de 5 lançamentos", "📉 <b>Queda do 1 pro 2:</b> −30% (a menor de todas 👏)"], mq
-    # o proprio lancamento com 0% no CPL1: sem linha de queda, sem erro
-    assert len(robo.linhas_media_e_queda(zero, "jan 2025", ["1", "2"])) == 1
+    mq = robo.linhas_posicao_e_queda(zero, "LC0526", ["1", "2"])
+    assert mq == ["📍 <b>Posição</b>\nCPL 2: 2º de 5", "📉 <b>Queda</b>\nDo 1 pro 2: −30% (a menor de todas 👏)"], mq
+    # o proprio lancamento com 0% no CPL1: sem bloco de queda, sem erro
+    assert robo.linhas_posicao_e_queda(zero, "jan 2025", ["1", "2"]) == ["📍 <b>Posição</b>\nCPL 1: 5º de 5\nCPL 2: 4º de 5"]  # empate com o Coelho (10%)
+
+
+def test_posicao_e_queda_por_cpl_sem_somar():
+    """
+    Hora 2 (% dos inscritos):  CPL1 / CPL2 / CPL3
+      Emilia 50 / 35 / 28 · Bianca 60 / 40 / 20 · Chapeuzinho 40 / 20 / – · Coelho 30 / 10 / 6 · Robin 20 / 15 / 10,5
+    Posicao: CPL1 2o de 5 · CPL2 2o de 5 · CPL3 1o de 4 (Chapeuzinho nao tem CPL3).
+    Queda 1->2: Emilia -30 x -33, -50, -67, -25 -> nem menor nem maior. Queda 2->3 (so quem tem CPL2 e CPL3):
+    Emilia 28/35-1 = -20 x Bianca -50, Coelho -40, Robin -30 -> a menor.
+    """
+    import datetime
+    dados = [("LC0526", "Emília - Aula 1", 5000, 3500, 2800), ("mar 2026", "BIANCA", 6000, 4000, 2000),
+             ("set 2025", "CHAPÉUZINHO", 4000, 2000, None), ("fev 2026", "COELHO FOFUXO", 3000, 1000, 600),
+             ("jan 2025", "ROBIN", 2000, 1500, 1050)]
+    curvas = []
+    for lanc, nome, *vs in dados:
+        for cpl, v in zip("123", vs):
+            if v is not None:
+                curvas += robo.linhas_da_curva(lanc, nome, cpl, "x", [v / 2, v / 2], 10000)
+    fim = robo.linhas_posicao_e_queda(curvas, "LC0526", ["1", "2", "3"])
+    assert fim == ["📍 <b>Posição</b>\nCPL 1: 2º de 5\nCPL 2: 2º de 5\nCPL 3: 1º de 4",
+                   "📉 <b>Queda</b>\nDo 1 pro 2: −30%\nDo 2 pro 3: −20% (a menor de todas 👏)"], fim
+    # posicao bate com a linha ✅ do bloco do CPL (mesma hora, mesma conta)
+    assert robo.linha_vizinhos(curvas, "LC0526", "3") == "✅ Acima de todos"
+    assert robo.linha_vizinhos(curvas, "LC0526", "2") == "✅ Acima do Chapéuzinho, abaixo da Bianca"
+    # a queda usa a ultima hora do CPL mais novo do par: CPL2 na hora 3 nao muda a queda 2->3 (CPL3 so tem hora 2)
+    mais = curvas + [["LC0526", "Emília - Aula 2", "2", "x", 3, 9000, 10000, "0.900000"]]
+    assert robo.linhas_posicao_e_queda(mais, "LC0526", ["1", "2", "3"])[1].endswith("Do 2 pro 3: −20% (a menor de todas 👏)")
+
+    # CPL3 do atual sem curva Studio ainda: linha do CPL3 some em Posicao e a queda 2->3 some
+    sem3 = [l for l in curvas if not (l[0] == "LC0526" and l[2] == "3")]
+    assert robo.linhas_posicao_e_queda(sem3, "LC0526", ["1", "2", "3"]) == [
+        "📍 <b>Posição</b>\nCPL 1: 2º de 5\nCPL 2: 2º de 5", "📉 <b>Queda</b>\nDo 1 pro 2: −30%"]
+
+    # mensagem inteira com 3 CPLs: o fim e os dois blocos aprovados, o resto igual
+    ativos = [{"lancamento": "LC0526", "cpl": c, "unicos": 0} for c in "123"]
+    hist = [{"LANCAMENTO": "LC0526", "CPL": c, "VIEWS": "1000", "PCT_VIEWS": "0.1"} for c in "123"]
+    msg = robo.montar_mensagem("LC0526", ativos, hist, curvas, datetime.datetime(2026, 10, 14, 11, 6))
+    assert msg.endswith("👤 Únicos: amanhã\n\n📍 <b>Posição</b>\nCPL 1: 2º de 5\nCPL 2: 2º de 5\nCPL 3: 1º de 4\n\n"
+                        "📉 <b>Queda</b>\nDo 1 pro 2: −30%\nDo 2 pro 3: −20% (a menor de todas 👏)\n"), msg
+    assert "Média" not in msg
+    # nenhuma curva: nem titulo
+    assert robo.linhas_posicao_e_queda([], "LC0526", ["1", "2", "3"]) == []
 
 
 def test_nomes_com_simbolos_nao_quebram_o_html():
