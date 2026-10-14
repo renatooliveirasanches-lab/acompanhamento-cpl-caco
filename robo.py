@@ -193,6 +193,8 @@ def buscar_estatisticas(video_id):
         "likes": soma("likeCount"),
         "comments": soma("commentCount"),
         "publishedAt": min(pubs) if pubs else None,
+        # estreia (premiere) agendada: antes de comecar a API da 0 views e a data em que foi AGENDADA
+        "agendado": all(i.get("snippet", {}).get("liveBroadcastContent") == "upcoming" for i in itens),
     }
 
 
@@ -444,6 +446,10 @@ def main():
         if not stats or not stats["publishedAt"]:
             print(f"Video {cfg['video_id']} ({cfg['lancamento']} {rotulo(cfg['cpl'])}) nao encontrado: "
                   "privado ou apagado? Desmarque ATIVO na planilha.", file=sys.stderr)
+            continue
+        if stats.get("agendado") or stats["publishedAt"] > agora:
+            # sem linha no snapshots: a mensagem nao ganha bloco de 0 views e a hora 0 conta da estreia
+            print(f"{cfg['lancamento']} {rotulo(cfg['cpl'])} ainda nao estreou: fica pra proxima rodada.")
             continue
         horas = int((agora - stats["publishedAt"]).total_seconds() // 3600)
         if ja_coletado(historico, cfg["lancamento"], cfg["cpl"], horas):

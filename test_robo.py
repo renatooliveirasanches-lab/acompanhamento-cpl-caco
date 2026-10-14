@@ -191,6 +191,43 @@ def test_nomes_com_simbolos_nao_quebram_o_html():
     assert "Tom_&amp;_Jerry &lt;2&gt;: 1,5 mil" in msg, msg
     assert robo.com_artigo("A & B") == "do A &amp; B"
 
+
+def test_cpl_agendado_nao_entra_antes_da_estreia():
+    """
+    CPL3 cadastrado com a estreia (premiere) marcada pra amanha: a API da 0 views e publishedAt = quando foi
+    agendado (ja no passado). A rodada nao pode gravar essa linha (senao a hora 0..N fica 'ja coletada' e o
+    'CPL 3: 0 views' vai pro Telegram) nem cair; os CPLs 1 e 2 seguem normais.
+    """
+    import datetime
+    agora = datetime.datetime.now(datetime.timezone.utc)
+    iso = lambda h: (agora - datetime.timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    api = {"cpl1": (iso(40), "none", "38000"), "cpl2": (iso(16), "none", "13000"),
+           "cpl3": (iso(3), "upcoming", "0"),       # agendado ha 3h, estreia so amanha
+           "cpl4": (iso(-5), "none", "0")}          # publicacao programada (data no futuro)
+    resposta = lambda url, params=None, timeout=30: robo.json.dumps({"items": [{
+        "statistics": {"viewCount": api[params["id"]][2]},
+        "snippet": {"publishedAt": api[params["id"]][0], "liveBroadcastContent": api[params["id"]][1]}}]})
+    ativos = [{"lancamento": "LC0526", "tag": "", "personagem": f"Emília - Aula {n}", "cpl": str(n),
+               "video_id": f"cpl{n}", "leads": 63271, "unicos": 0, "planilha_leads": ""} for n in (1, 2, 3, 4)]
+    pasta = tempfile.mkdtemp()
+    enviadas = []
+    troca = {"_get": resposta, "ler_config": lambda: ativos, "enviar_telegram": enviadas.append,
+             "YOUTUBE_API_KEY": "x", "ARQUIVO_SNAPSHOTS": robo.os.path.join(pasta, "snap.csv"),
+             "ARQUIVO_CURVAS": robo.os.path.join(pasta, "curvas.csv")}
+    original = {k: getattr(robo, k) for k in troca}
+    for k, v in troca.items():
+        setattr(robo, k, v)
+    try:
+        robo.main()
+        gravado = robo.ler_historico()
+    finally:
+        for k, v in original.items():
+            setattr(robo, k, v)
+    assert sorted(h["CPL"] for h in gravado) == ["1", "2"], gravado
+    assert len(enviadas) == 1 and "CPL 3" not in enviadas[0] and "CPL 4" not in enviadas[0], enviadas
+    assert "🎬 <b>CPL 2</b>\n13 mil views" in enviadas[0], enviadas
+
+
 if __name__ == "__main__":
     for nome, fn in sorted(globals().items()):
         if nome.startswith("test_"):
