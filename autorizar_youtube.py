@@ -21,7 +21,7 @@ import webbrowser
 
 CLIENT_SECRET = os.path.expanduser("~/.gws/personal/client_secret.json")
 ESCOPO = "https://www.googleapis.com/auth/yt-analytics.readonly"
-PORTA = 8765
+PORTA = int(os.environ.get("PORTA", 8766))  # 8765 é do MemPalace
 
 codigo_recebido = {}
 respondeu = threading.Event()
